@@ -1,0 +1,2685 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>파렛트 순번 투입 프로그램</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- HTML5 QRCode Scanner Library (Android / iOS WebRTC Camera Support) -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <!-- QRCode.js for Label Generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <!-- PeerJS for Multi-Phone Real-time Server/Client Sync -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+
+  <!-- Google Fonts: Inter & Noto Sans KR -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    body {
+      font-family: 'Noto Sans KR', 'Inter', sans-serif;
+      background-color: #0b1120;
+      color: #f8fafc;
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+      min-height: 100dvh;
+    }
+    /* Custom styling for html5-qrcode video container */
+    #qr-reader {
+      width: 100% !important;
+      border: none !important;
+      background: #000;
+      overflow: hidden;
+      border-radius: 1rem;
+      position: relative;
+    }
+    #qr-reader video {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover !important;
+      border-radius: 1rem;
+    }
+    #qr-reader__dashboard,
+    #qr-reader__header_message {
+      display: none !important;
+    }
+    /* Laser scan animation inside scanner viewfinder */
+    @keyframes scanLaser {
+      0% { top: 8%; opacity: 0.4; }
+      50% { top: 88%; opacity: 1; }
+      100% { top: 8%; opacity: 0.4; }
+    }
+    .laser-line {
+      position: absolute;
+      left: 8%;
+      right: 8%;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #22d3ee, #38bdf8, #22d3ee, transparent);
+      box-shadow: 0 0 12px #22d3ee, 0 0 24px #0284c7;
+      animation: scanLaser 2.2s ease-in-out infinite;
+      pointer-events: none;
+      z-index: 15;
+    }
+    @keyframes pulseRing {
+      0% { transform: scale(0.97); opacity: 0.85; }
+      50% { transform: scale(1); opacity: 1; }
+      100% { transform: scale(0.97); opacity: 0.85; }
+    }
+    .scan-frame-pulse {
+      animation: pulseRing 2s infinite ease-in-out;
+    }
+    @keyframes alarmFlash {
+      0%, 100% { background-color: rgba(136, 19, 55, 0.96); }
+      50% { background-color: rgba(225, 29, 72, 0.98); }
+    }
+    .ng-alarm-flash {
+      animation: alarmFlash 0.25s infinite;
+    }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="flex flex-col min-h-[100dvh] bg-slate-950 text-slate-100">
+
+  <!-- 외장 스캐너(동글) 포커스 보조용 숨김 입력창 (가상 키보드 팝업 방지) -->
+  <input id="hid-scanner-catcher" type="text" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+    class="fixed -top-96 left-0 opacity-0 pointer-events-none w-1 h-1" />
+
+  <!-- ================= TOP HEADER BAR ================= -->
+  <header class="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-3 py-2.5 shadow-lg">
+    <div class="max-w-md mx-auto flex items-center justify-between gap-1.5">
+      <!-- Left: App Title & Breadcrumb -->
+      <div class="flex items-center gap-2 min-w-0">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0">
+          <svg class="w-5 h-5 text-slate-950" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 14.625v4.5m4.5-4.5v4.5m-2.25-4.5v4.5" />
+          </svg>
+        </div>
+        <div class="truncate">
+          <h1 class="text-sm sm:text-base font-extrabold tracking-tight text-white leading-tight truncate">파렛트 순번 투입 시스템</h1>
+          <p id="header-Subtitle" class="text-[11px] font-medium text-cyan-400 truncate">홈 화면 · 오더시간을 선택하세요</p>
+        </div>
+      </div>
+
+      <!-- Right: Multi-Phone Sync, History/Download, Sound Toggle & QR Helper -->
+      <div class="flex items-center gap-1 shrink-0">
+        <!-- 서버/단말기 연동 버튼 -->
+        <button onclick="openSyncModal()" id="btn-sync-status" class="px-2 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-bold text-slate-200 flex items-center gap-1 transition active:scale-95">
+          <span id="sync-status-dot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+          <span id="sync-status-text">서버연동</span>
+        </button>
+
+        <!-- 전체 스캔이력 조회 및 메신저 다운로드 버튼 -->
+        <button onclick="openHistoryExportModal()" class="px-2 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-[11px] font-extrabold text-amber-300 flex items-center gap-1 transition active:scale-95" title="스캔이력 확인 및 다운로드">
+          <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+          </svg>
+          <span>이력/다운</span>
+        </button>
+
+        <!-- 알림음 토글 -->
+        <button id="btn-sound-toggle" onclick="toggleSound()" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition active:scale-95" title="알림음 켜기/끄기">
+          <svg id="icon-sound-on" class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+          </svg>
+          <svg id="icon-sound-off" class="w-4 h-4 text-rose-400 hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.531V19.94a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.506-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.395C2.806 8.757 3.63 8.25 4.51 8.25H6.75z" />
+          </svg>
+        </button>
+
+        <!-- 식별표 QR 생성기 -->
+        <button onclick="openQrGeneratorModal()" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-cyan-300 flex items-center gap-1 transition active:scale-95" title="식별표 QR 생성">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= MAIN CONTENT CONTAINER ================= -->
+  <main class="flex-1 w-full max-w-md mx-auto px-3 pt-3 pb-24 flex flex-col">
+
+    <!-- 1. HOME SCREEN: 8 FIXED ORDER TIME SELECTION (오더발행 시간 선택 화면) -->
+    <section id="screen-home" class="flex-1 flex flex-col gap-3.5">
+      <!-- Top Info Banner -->
+      <div class="bg-gradient-to-r from-slate-900 via-slate-800/90 to-slate-900 border border-slate-700/80 rounded-2xl p-3.5 shadow-md">
+        <div class="flex items-center justify-between">
+          <div>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-400/30">
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+              STEP 1 · 오더발행 시간 선택 (총 8회차)
+            </span>
+            <h2 class="text-lg font-extrabold text-white mt-1.5">오더발행 시간을 선택해주세요</h2>
+            <p class="text-xs text-slate-400 mt-0.5">선택 후 투입 라인(11·12·22·23라인) 선택 화면으로 이동합니다.</p>
+          </div>
+          <div class="text-right">
+            <div class="text-[11px] text-slate-400 font-medium">총 누적 진행</div>
+            <div id="home-total-scanned" class="text-xl font-black text-cyan-400">0건</div>
+          </div>
+        </div>
+
+        <!-- Quick Server History & Messenger Export Banner Button -->
+        <button onclick="openHistoryExportModal()" class="mt-3 w-full py-2.5 px-3 rounded-xl bg-slate-950/90 hover:bg-slate-950 border border-amber-500/40 flex items-center justify-between text-xs transition active:scale-[0.99]">
+          <span class="flex items-center gap-2 font-bold text-amber-300">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>전체 스캔이력(스캔시간) 확인 및 메신저 전송용 다운로드</span>
+          </span>
+          <span id="home-history-count-badge" class="px-2 py-0.5 rounded-lg bg-amber-500 text-slate-950 font-black text-[11px]">0건 기록 ▶</span>
+        </button>
+      </div>
+
+      <!-- 8 Order Time Buttons Grid (2 columns x 4 rows) -->
+      <div id="order-time-buttons-container" class="grid grid-cols-2 gap-2.5 flex-1">
+        <!-- Rendered dynamically by JS: "00:10","08:50","10:50","13:30","15:30","17:30","19:30","22:10" -->
+      </div>
+
+      <!-- Item QR Code Spec Reference Accordion -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3">
+        <button onclick="toggleSpecTable()" class="w-full flex items-center justify-between text-xs font-bold text-slate-300">
+          <span class="flex items-center gap-1.5">
+            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+            </svg>
+            품목별 파렛트 식별표 QR 규격 안내 (라인+품목+순번)
+          </span>
+          <span id="spec-toggle-label" class="text-cyan-400">펼치기 ▼</span>
+        </button>
+        <div id="spec-table-wrapper" class="hidden mt-2.5 pt-2.5 border-t border-slate-800 text-[11px] text-slate-300 space-y-1.5">
+          <p class="text-slate-400">예시 (11라인 F/C 1번): <code class="text-cyan-300 bg-slate-950 px-1.5 py-0.5 rounded font-mono">11|E10E10100|E20E20110|E30E30100|1</code></p>
+          <div class="grid grid-cols-1 gap-1 font-mono text-[10px]">
+            <div class="flex justify-between bg-slate-950/70 px-2 py-1 rounded"><span class="font-bold text-amber-300">F/C</span><span>|E10E10100|E20E20110|E30E30100|</span></div>
+            <div class="flex justify-between bg-slate-950/70 px-2 py-1 rounded"><span class="font-bold text-amber-300">F/B</span><span>|E10E10100|E20E20100|E30E30100|</span></div>
+            <div class="flex justify-between bg-slate-950/70 px-2 py-1 rounded"><span class="font-bold text-emerald-300">R/C</span><span>|E10E10100|E20E20110|E30E30110|</span></div>
+            <div class="flex justify-between bg-slate-950/70 px-2 py-1 rounded"><span class="font-bold text-emerald-300">R/B</span><span>|E10E10100|E20E20100|E30E30110|</span></div>
+            <div class="flex justify-between bg-slate-950/70 px-2 py-1 rounded"><span class="font-bold text-purple-300">3/C</span><span>|E10E10100|E20E20110|E30E30130|</span></div>
+            <div class="flex justify-between bg-slate-950/70 px-2 py-1 rounded"><span class="font-bold text-purple-300">3/B</span><span>|E10E10100|E20E20100|E30E30130|</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. LINE SELECTION SCREEN: (11라인, 12라인, 22라인, 23라인) -->
+    <section id="screen-lines" class="hidden flex-1 flex flex-col gap-3.5">
+      <!-- Top Info Banner -->
+      <div class="bg-gradient-to-r from-slate-900 via-slate-800/90 to-slate-900 border border-blue-500/40 rounded-2xl p-3.5 shadow-md">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500/20 text-blue-300 border border-blue-400/30">
+              STEP 2 · 투입 라인 선택
+            </span>
+            <h2 class="text-lg font-black text-white mt-1.5 flex items-center gap-2 flex-wrap">
+              <span id="line-screen-order-badge" class="px-2.5 py-0.5 rounded-lg bg-amber-500 text-slate-950 text-sm font-black">08:50 오더</span>
+              <span>투입 라인 선택</span>
+            </h2>
+          </div>
+          <button onclick="navigateToHome()" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-bold text-slate-200 flex items-center gap-1 active:scale-95 transition shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+            </svg>
+            오더시간 변경
+          </button>
+        </div>
+        <div class="mt-2 pt-2 border-t border-slate-800 flex items-center justify-between text-xs">
+          <span class="text-slate-400">선택된 오더시간 기준으로 각 라인 진행률이 표시됩니다.</span>
+          <span id="line-screen-total-scanned" class="font-extrabold text-cyan-400">0건 완료</span>
+        </div>
+      </div>
+
+      <!-- 4 Line Buttons Grid -->
+      <div id="line-buttons-container" class="grid grid-cols-1 gap-3 flex-1">
+        <!-- Rendered dynamically by JS -->
+      </div>
+    </section>
+
+    <!-- 3. ITEM SELECTION SCREEN: (F/C, F/B, R/C, R/B, 3/C, 3/B) -->
+    <section id="screen-items" class="hidden flex-1 flex flex-col gap-3.5">
+      <!-- Top Context Banner -->
+      <div class="bg-gradient-to-r from-blue-950/90 via-slate-900 to-slate-900 border border-blue-500/40 rounded-2xl p-3.5 shadow-md">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+              STEP 3 · 품목 선택 (자동 스캐너 실행)
+            </span>
+            <h2 class="text-lg font-black text-white mt-1.5 flex items-center gap-1.5 flex-wrap">
+              <span id="item-screen-order-badge" class="px-2 py-0.5 rounded-lg bg-amber-500 text-slate-950 text-xs font-black">08:50</span>
+              <span id="selected-line-badge" class="px-2.5 py-0.5 rounded-lg bg-blue-600 text-white text-sm font-black">11라인</span>
+              <span>투입 품목</span>
+            </h2>
+          </div>
+          <button onclick="navigateToLines(state.currentOrderTime)" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-bold text-slate-200 flex items-center gap-1 active:scale-95 transition shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+            </svg>
+            라인 변경
+          </button>
+        </div>
+        <p class="text-xs text-slate-300 mt-2">
+          품목을 누르면 <strong class="text-cyan-300">이전 진행 다음 순번부터</strong> 카메라 및 외장 스캐너가 즉시 가동됩니다.
+        </p>
+      </div>
+
+      <!-- 6 Item Buttons Grid -->
+      <div id="item-buttons-container" class="grid grid-cols-2 gap-3 flex-1">
+        <!-- Rendered dynamically by JS -->
+      </div>
+    </section>
+
+    <!-- 4. QR SCANNER SCREEN -->
+    <section id="screen-scanner" class="hidden flex-1 flex flex-col gap-2.5">
+      <!-- Top Status Header inside Scanner -->
+      <div class="bg-slate-900 border border-slate-700/90 rounded-2xl p-3 shadow-lg">
+        <div class="flex items-center justify-between gap-2">
+          <!-- OrderTime & Line & Item Badges -->
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span id="scan-order-badge" class="px-2 py-1 rounded-xl bg-amber-500 text-slate-950 font-black text-xs shadow">08:50</span>
+            <span id="scan-line-badge" class="px-2.5 py-1 rounded-xl bg-blue-600 text-white font-black text-xs shadow">11라인</span>
+            <span id="scan-item-badge" class="px-2.5 py-1 rounded-xl bg-cyan-400 text-slate-950 font-black text-sm shadow">F/C</span>
+            <button onclick="navigateToItems(state.currentLine)" class="px-2 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-bold text-slate-300 active:scale-95 transition">
+              품목변경
+            </button>
+          </div>
+
+          <!-- Current Sequence Target Box -->
+          <div class="text-right shrink-0">
+            <div class="text-[11px] font-semibold text-slate-400">투입 대기 순번</div>
+            <div id="scan-expected-seq-display" class="text-2xl font-black text-cyan-400 leading-none mt-0.5">
+              1<span class="text-xs font-bold text-slate-400 ml-0.5">/ 20번</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Expected QR String Preview Bar -->
+        <div class="mt-2.5 pt-2 border-t border-slate-800 flex items-center justify-between gap-2 text-xs">
+          <span class="text-slate-400 font-medium shrink-0">목표 QR:</span>
+          <code id="scan-expected-qr-code" class="font-mono text-[11px] text-cyan-300 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800 truncate flex-1 text-right">
+            11|E10E10100|E20E20110|E30E30100|1
+          </code>
+        </div>
+
+        <!-- External Dongle Scanner Status & Camera Toggle Bar -->
+        <div class="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span id="dongle-indicator-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+            <span id="dongle-status-text" class="text-[11px] font-bold text-emerald-300 truncate">
+              외장 스캐너(동글) 상시 대기중 (한/영 자동변환)
+            </span>
+          </div>
+          <button id="btn-toggle-camera-mode" onclick="toggleExternalScannerOnlyMode()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[11px] font-bold text-cyan-300 shrink-0 active:scale-95 transition">
+            외장스캐너 전용 (카메라 끔)
+          </button>
+        </div>
+      </div>
+
+      <!-- Camera Viewport Box -->
+      <div class="relative bg-black rounded-2xl border-2 border-slate-700 overflow-hidden shadow-xl aspect-[4/3] max-h-[265px] w-full mx-auto flex items-center justify-center">
+        <!-- HTML5-QRCode target div -->
+        <div id="qr-reader" class="w-full h-full"></div>
+
+        <!-- Viewfinder Overlay Guide -->
+        <div id="scanner-overlay-guide" class="pointer-events-none absolute inset-0 flex flex-col items-center justify-between p-3 z-10">
+          <div class="w-full flex items-center justify-between">
+            <span id="camera-status-pill" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-950/80 text-emerald-400 border border-emerald-500/40 backdrop-blur-sm">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              카메라 + 외장스캐너 동시 가동중
+            </span>
+            <button onclick="switchCameraFacing()" class="pointer-events-auto px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-950/80 text-slate-200 border border-slate-600 backdrop-blur-sm active:scale-95">
+              전/후면 전환
+            </button>
+          </div>
+
+          <!-- Center Aiming Frame -->
+          <div class="relative w-40 h-40 border-2 border-cyan-400/60 rounded-2xl scan-frame-pulse flex items-center justify-center">
+            <div class="absolute -top-0.5 -left-0.5 w-6 h-6 border-t-4 border-l-4 border-cyan-400 rounded-tl-xl"></div>
+            <div class="absolute -top-0.5 -right-0.5 w-6 h-6 border-t-4 border-r-4 border-cyan-400 rounded-tr-xl"></div>
+            <div class="absolute -bottom-0.5 -left-0.5 w-6 h-6 border-b-4 border-l-4 border-cyan-400 rounded-bl-xl"></div>
+            <div class="absolute -bottom-0.5 -right-0.5 w-6 h-6 border-b-4 border-r-4 border-cyan-400 rounded-br-xl"></div>
+            <div class="laser-line"></div>
+          </div>
+
+          <div class="text-center">
+            <span id="scanner-guide-caption" class="inline-block px-3 py-1 rounded-full text-xs font-bold bg-slate-950/85 text-white border border-slate-700">
+              카메라 비추기 또는 외장 스캐너(동글)로 스캔하세요
+            </span>
+          </div>
+        </div>
+
+        <!-- External Scanner Only Mode / Camera Fallback Box -->
+        <div id="camera-fallback-box" class="hidden absolute inset-0 bg-slate-950/95 z-20 flex flex-col items-center justify-center p-4 text-center">
+          <div class="w-12 h-12 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 mb-2">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
+            </svg>
+          </div>
+          <p id="camera-fallback-title" class="text-sm font-black text-white">외장 스캐너(동글) 전용 대기 모드</p>
+          <p id="camera-error-msg" class="text-xs text-slate-300 mt-1 max-w-xs leading-relaxed">
+            외장 스캐너(동글)로 파렛트 식별표 QR을 스캔하면 즉시 판정됩니다.
+          </p>
+          <div class="flex items-center gap-2 mt-3">
+            <button onclick="enableCameraMode()" class="px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-extrabold text-xs shadow active:scale-95 transition">
+              휴대폰 카메라 켜기
+            </button>
+            <label class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-bold text-xs cursor-pointer active:scale-95 transition">
+              사진 촬영 스캔
+              <input type="file" accept="image/*" capture="environment" class="hidden" onchange="handleImageFileScan(event)" />
+            </label>
+          </div>
+        </div>
+
+        <!-- Instant Scan Result Flash Overlay (OK / PASS / NG / Completed) -->
+        <div id="scan-feedback-overlay" class="hidden absolute inset-0 z-30 flex flex-col items-center justify-center p-4 text-center backdrop-blur-md transition-all">
+          <!-- Populated dynamically on scan -->
+        </div>
+      </div>
+
+      <!-- Real-time Scan Result Banner (Persistent last scan feedback) -->
+      <div id="last-scan-banner" class="rounded-2xl p-3 border bg-slate-900 border-slate-800 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div id="last-scan-icon" class="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center text-slate-400 font-black text-xs shrink-0">
+            대기
+          </div>
+          <div class="min-w-0">
+            <div id="last-scan-title" class="text-sm font-extrabold text-slate-200 truncate">스캔 대기 중입니다</div>
+            <div id="last-scan-detail" class="text-xs text-slate-400 truncate">카메라 또는 외장 스캐너(동글)로 QR을 스캔하세요.</div>
+          </div>
+        </div>
+        <span id="last-scan-time" class="text-[11px] font-mono text-slate-400 shrink-0">--:--:--</span>
+      </div>
+
+      <!-- 1 ~ 20 Pallet Sequence Progress Grid -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-extrabold text-slate-300 flex items-center gap-1.5">
+            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            파렛트 투입 순번 현황 (1번 ~ 20번)
+          </span>
+          <div class="flex items-center gap-2 text-[11px] font-bold">
+            <span class="text-emerald-400">■ 정상</span>
+            <span class="text-amber-400">■ PASS</span>
+            <span id="seq-progress-summary" class="text-xs font-extrabold text-cyan-300 ml-1">0 / 20</span>
+          </div>
+        </div>
+        <div id="pallet-grid-20" class="grid grid-cols-10 gap-1.5">
+          <!-- 1 to 20 badges generated by JS -->
+        </div>
+      </div>
+
+      <!-- Recent Scan History List for Current OrderTime + Line + Item -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-extrabold text-slate-300">현재 품목 스캔/PASS 이력 (스캔시간 포함)</span>
+          <div class="flex items-center gap-2">
+            <span id="history-count-label" class="text-[11px] text-slate-400">최근 기록 순</span>
+            <button onclick="openHistoryExportModal()" class="px-2 py-0.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-[10px] font-bold text-amber-300">
+              전체이력/다운로드
+            </button>
+          </div>
+        </div>
+        <div id="item-history-list" class="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+          <!-- History items rendered by JS -->
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================= FIXED BOTTOM NAVIGATION & ACTION BAR (3 BUTTONS: 홈 화면 / PASS / 스캔완료) ================= -->
+  <footer class="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-2.5 py-2.5 shadow-2xl">
+    <div class="max-w-md mx-auto grid grid-cols-3 gap-2">
+      <!-- Button 1: Home Screen (홈 화면 - 오더시간 선택) -->
+      <button id="btn-bottom-home" onclick="navigateToHome()" class="py-3 px-2 rounded-2xl bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-600 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg transition">
+        <svg class="w-4 h-4 sm:w-5 sm:h-5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+        </svg>
+        <span>홈 화면</span>
+      </button>
+
+      <!-- Button 2: PASS Button (홈 화면과 스캔완료 사이 배치) -->
+      <button id="btn-bottom-pass" onclick="handlePassButtonClick()" class="py-3 px-2 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 active:scale-95 text-slate-950 font-black text-xs sm:text-sm flex items-center justify-center gap-1 shadow-lg shadow-amber-500/25 transition">
+        <svg class="w-4 h-4 sm:w-5 sm:h-5 shrink-0" fill="none" stroke="currentColor" stroke-width="2.6" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 8.688c0-.864.933-1.405 1.683-.977l7.108 4.062a1.125 1.125 0 010 1.953l-7.108 4.062A1.125 1.125 0 013 16.81V8.688zM12.75 8.688c0-.864.933-1.405 1.683-.977l7.108 4.062a1.125 1.125 0 010 1.953l-7.108 4.062a1.125 1.125 0 01-1.683-.977V8.688z" />
+        </svg>
+        <span id="btn-pass-text">PASS</span>
+      </button>
+
+      <!-- Button 3: Scan Complete / Reset to #1 (스캔완료) -->
+      <button id="btn-bottom-reset" onclick="handleScanCompleteButtonClick()" class="py-3 px-2 rounded-2xl bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 active:scale-95 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1 shadow-lg shadow-rose-600/25 transition">
+        <svg class="w-4 h-4 sm:w-5 sm:h-5 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+        </svg>
+        <span id="btn-reset-text" class="truncate">스캔완료</span>
+      </button>
+    </div>
+  </footer>
+
+  <!-- ================= SERVER SCAN HISTORY & MESSENGER EXPORT MODAL ================= -->
+  <div id="history-export-modal" class="hidden fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-3">
+    <div class="w-full max-w-md max-h-[90dvh] bg-slate-900 border border-slate-700 rounded-3xl p-4 shadow-2xl flex flex-col gap-3">
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+        <div>
+          <h3 class="text-base font-black text-white flex items-center gap-1.5">
+            <span>통합 스캔이력 확인 및 다운로드</span>
+            <span id="export-modal-role-tag" class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">실시간</span>
+          </h3>
+          <p class="text-[11px] text-slate-400">서버 휴대폰에 취합된 스캔시간·이력을 확인하고 메신저로 전송합니다</p>
+        </div>
+        <button onclick="closeHistoryExportModal()" class="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Filter Controls (오더시간 / 라인 / 상태) -->
+      <div class="grid grid-cols-3 gap-2">
+        <div>
+          <label class="text-[10px] font-bold text-slate-400 block mb-1">오더발행 시간</label>
+          <select id="filter-order-time" onchange="renderServerHistoryModalList()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-2 py-1.5 text-xs font-bold text-white">
+            <option value="ALL">전체 시간</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-[10px] font-bold text-slate-400 block mb-1">라인 선택</label>
+          <select id="filter-line" onchange="renderServerHistoryModalList()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-2 py-1.5 text-xs font-bold text-white">
+            <option value="ALL">전체 라인</option>
+            <option value="11">11라인</option>
+            <option value="12">12라인</option>
+            <option value="22">22라인</option>
+            <option value="23">23라인</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-[10px] font-bold text-slate-400 block mb-1">판정 구분</label>
+          <select id="filter-status" onchange="renderServerHistoryModalList()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-2 py-1.5 text-xs font-bold text-white">
+            <option value="ALL">전체 (정상/PASS/NG)</option>
+            <option value="OK">정상 (OK)</option>
+            <option value="PASS">PASS</option>
+            <option value="NG">오류 (NG)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Summary Counts Bar -->
+      <div id="export-summary-bar" class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 flex items-center justify-between text-xs">
+        <span class="text-slate-400 font-bold">조회 건수: <strong id="export-total-count" class="text-white">0건</strong></span>
+        <div class="flex items-center gap-2.5 text-[11px] font-extrabold">
+          <span class="text-emerald-400">정상 <b id="export-ok-count">0</b></span>
+          <span class="text-amber-400">PASS <b id="export-pass-count">0</b></span>
+          <span class="text-rose-400">오류 <b id="export-ng-count">0</b></span>
+        </div>
+      </div>
+
+      <!-- Scrollable Scan History Table/List -->
+      <div id="server-history-modal-list" class="flex-1 min-h-[200px] max-h-[42dvh] overflow-y-auto bg-slate-950/90 border border-slate-800 rounded-2xl p-2.5 space-y-1.5">
+        <!-- Populated by JS -->
+      </div>
+
+      <!-- Download & Messenger Share Action Buttons -->
+      <div class="space-y-2 pt-1 border-t border-slate-800">
+        <div class="grid grid-cols-2 gap-2">
+          <button onclick="downloadHistoryAsCsv()" class="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow active:scale-95 transition">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            <span>엑셀(CSV) 다운로드</span>
+          </button>
+
+          <button onclick="downloadHistoryAsTxt()" class="py-2.5 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow active:scale-95 transition">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+            </svg>
+            <span>텍스트(TXT) 다운로드</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <button onclick="shareHistoryToMessenger()" class="py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow active:scale-95 transition">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
+            </svg>
+            <span>메신저 바로 공유/전송</span>
+          </button>
+
+          <button onclick="copyHistoryForMessenger()" class="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-extrabold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition">
+            <svg class="w-4 h-4 shrink-0 text-cyan-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+            </svg>
+            <span id="btn-copy-messenger-text">메신저용 텍스트 복사</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MULTI-PHONE SERVER / CLIENT SYNC MODAL ================= -->
+  <div id="sync-modal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-3xl p-5 shadow-2xl flex flex-col gap-3.5">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div>
+          <h3 class="text-base font-black text-white">다중 휴대폰 실시간 연동 설정</h3>
+          <p class="text-[11px] text-slate-400">특정 휴대폰 1대를 서버로, 나머지 휴대폰을 단말기로 연결합니다</p>
+        </div>
+        <button onclick="closeSyncModal()" class="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Current Sync Status Box -->
+      <div class="bg-slate-950 border border-slate-800 rounded-2xl p-3 text-xs space-y-1">
+        <div class="flex items-center justify-between">
+          <span class="text-slate-400 font-bold">현재 동작 모드:</span>
+          <span id="modal-sync-role-badge" class="px-2 py-0.5 rounded-lg bg-slate-800 text-slate-300 font-black">단독 사용 모드</span>
+        </div>
+        <div id="modal-sync-detail" class="text-slate-400 text-[11px] pt-1">
+          아래에서 [서버 휴대폰으로 시작] 또는 [서버 휴대폰에 연결]을 선택하세요.
+        </div>
+      </div>
+
+      <!-- Option 1: Use this phone as Server (Host) -->
+      <div class="bg-emerald-950/25 border border-emerald-500/40 rounded-2xl p-3.5 flex flex-col gap-2.5">
+        <div class="flex items-center justify-between">
+          <div>
+            <span class="text-xs font-black text-emerald-300 block">1. 이 휴대폰을 [메인 서버]로 사용</span>
+            <span class="text-[11px] text-slate-400">모든 단말기의 스캔이력과 시간이 이 휴대폰에 실시간 취합됩니다.</span>
+          </div>
+          <button onclick="startAsHostServer()" class="px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shrink-0 active:scale-95 transition">
+            서버 시작
+          </button>
+        </div>
+        <div id="host-code-display-box" class="hidden bg-slate-950 border border-emerald-500/50 rounded-xl p-2.5 text-center">
+          <span class="text-[11px] text-slate-400 block">서버 연동 번호 (다른 휴대폰에서 입력)</span>
+          <strong id="host-room-code-text" class="text-2xl font-mono font-black text-emerald-400 tracking-widest">----</strong>
+          <span id="host-client-count-text" class="text-[11px] text-cyan-300 block mt-0.5">연결된 단말기: 0대</span>
+        </div>
+      </div>
+
+      <!-- Option 2: Connect this phone to the Server phone (Client) -->
+      <div class="bg-cyan-950/25 border border-cyan-500/40 rounded-2xl p-3.5 flex flex-col gap-2.5">
+        <div>
+          <span class="text-xs font-black text-cyan-300 block">2. 다른 [서버 휴대폰]에 연결하여 함께 사용</span>
+          <span class="text-[11px] text-slate-400">서버 휴대폰에 표시된 4자리 연동 번호를 입력하세요.</span>
+        </div>
+        <div class="flex gap-2">
+          <input id="client-room-code-input" type="text" maxlength="4" inputmode="numeric" placeholder="4자리 번호 입력 (예: 1234)"
+            class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm font-mono font-black text-center text-white tracking-widest focus:outline-none focus:border-cyan-400" />
+          <button onclick="connectAsClient()" class="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs shrink-0 active:scale-95 transition">
+            연결하기
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Button to Open Server Scan History & Export -->
+      <button onclick="closeSyncModal(); openHistoryExportModal();" class="w-full py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-xs font-extrabold text-amber-300 active:scale-95">
+        전체 스캔이력 확인 및 메신저 다운로드 열기
+      </button>
+
+      <!-- Disconnect Button -->
+      <button onclick="disconnectSyncSession()" class="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-300 active:scale-95">
+        연동 해제 (단독 모드로 전환)
+      </button>
+    </div>
+  </div>
+
+  <!-- ================= CUSTOM CONFIRMATION MODAL ================= -->
+  <div id="confirm-modal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-3xl p-5 shadow-2xl">
+      <div class="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 mx-auto mb-3">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+        </svg>
+      </div>
+      <h3 id="confirm-modal-title" class="text-lg font-black text-white text-center">스캔완료 및 처음부터 준비</h3>
+      <p id="confirm-modal-desc" class="text-xs text-slate-300 text-center mt-2 leading-relaxed">
+        현재 품목의 스캔 이력을 완료 처리하고 1번 파렛트부터 다시 스캔할 수 있도록 초기화하시겠습니까?
+      </p>
+      <div class="grid grid-cols-2 gap-2.5 mt-5">
+        <button onclick="closeConfirmModal()" class="py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-extrabold text-slate-300 active:scale-95">
+          취소
+        </button>
+        <button id="confirm-modal-ok-btn" class="py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-xs font-extrabold text-white shadow-lg shadow-rose-600/30 active:scale-95">
+          확인
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= QR CODE GENERATOR MODAL ================= -->
+  <div id="qr-generator-modal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-3xl p-4 shadow-2xl flex flex-col gap-3">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+        <div>
+          <h3 class="text-base font-black text-white">파렛트 식별표 QR 생성기</h3>
+          <p class="text-[11px] text-slate-400">카메라 또는 외장 스캐너(동글)로 스캔 테스트가 가능합니다</p>
+        </div>
+        <button onclick="closeQrGeneratorModal()" class="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Selectors for Line, Item, Sequence -->
+      <div class="grid grid-cols-3 gap-2">
+        <div>
+          <label class="text-[11px] font-bold text-slate-400 block mb-1">라인</label>
+          <select id="gen-line" onchange="updateGeneratedQr()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold text-white">
+            <option value="11">11라인</option>
+            <option value="12">12라인</option>
+            <option value="22">22라인</option>
+            <option value="23">23라인</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-[11px] font-bold text-slate-400 block mb-1">품목</label>
+          <select id="gen-item" onchange="updateGeneratedQr()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold text-white">
+            <option value="F/C">F/C</option>
+            <option value="F/B">F/B</option>
+            <option value="R/C">R/C</option>
+            <option value="R/B">R/B</option>
+            <option value="3/C">3/C</option>
+            <option value="3/B">3/B</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-[11px] font-bold text-slate-400 block mb-1">파렛트 순번</label>
+          <select id="gen-seq" onchange="updateGeneratedQr()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold text-white">
+            <!-- Populated 1..20 by JS -->
+          </select>
+        </div>
+      </div>
+
+      <!-- Generated QR Display Card -->
+      <div class="bg-white rounded-2xl p-4 flex flex-col items-center justify-center shadow-inner">
+        <div class="text-slate-900 font-black text-sm mb-2" id="gen-card-title">11라인 · F/C · 1번 파렛트</div>
+        <div id="qrcode-canvas-holder" class="p-2 bg-white rounded-xl"></div>
+        <code id="gen-qr-string" class="mt-2 text-[11px] font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg break-all text-center">
+          11|E10E10100|E20E20110|E30E30100|1
+        </code>
+      </div>
+
+      <!-- Quick Next/Prev Pallet Number in Generator -->
+      <div class="grid grid-cols-2 gap-2">
+        <button onclick="stepGeneratedSeq(-1)" class="py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 active:scale-95">
+          ◀ 이전 순번 QR
+        </button>
+        <button onclick="stepGeneratedSeq(1)" class="py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-xs font-bold text-white active:scale-95">
+          다음 순번 QR ▶
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= APPLICATION JAVASCRIPT ================= -->
+  <script>
+    /**
+     * 1. 핵심 기준 데이터 정의
+     * - 오더발행 기준 총 8가지: "00:10","08:50","10:50","13:30","15:30","17:30","19:30","22:10"
+     * - 라인 4개: 11, 12, 22, 23라인
+     * - 품목 6개: F/C, F/B, R/C, R/B, 3/C, 3/B
+     */
+    const ORDER_TIMES = [
+      { id: "00:10", step: "1회차", desc: "00:10 오더발행" },
+      { id: "08:50", step: "2회차", desc: "08:50 오더발행" },
+      { id: "10:50", step: "3회차", desc: "10:50 오더발행" },
+      { id: "13:30", step: "4회차", desc: "13:30 오더발행" },
+      { id: "15:30", step: "5회차", desc: "15:30 오더발행" },
+      { id: "17:30", step: "6회차", desc: "17:30 오더발행" },
+      { id: "19:30", step: "7회차", desc: "19:30 오더발행" },
+      { id: "22:10", step: "8회차", desc: "22:10 오더발행" }
+    ];
+
+    const LINES = [
+      { id: "11", name: "11라인", desc: "제1공장 11호 조립라인", accent: "from-blue-600 to-cyan-500", badgeBg: "bg-blue-600" },
+      { id: "12", name: "12라인", desc: "제1공장 12호 조립라인", accent: "from-indigo-600 to-blue-500", badgeBg: "bg-indigo-600" },
+      { id: "22", name: "22라인", desc: "제2공장 22호 조립라인", accent: "from-emerald-600 to-teal-500", badgeBg: "bg-emerald-600" },
+      { id: "23", name: "23라인", desc: "제2공장 23호 조립라인", accent: "from-violet-600 to-purple-500", badgeBg: "bg-violet-600" }
+    ];
+
+    const ITEMS = [
+      { id: "F/C", name: "F/C", desc: "프론트 쿠션", code: "|E10E10100|E20E20110|E30E30100|", color: "amber" },
+      { id: "F/B", name: "F/B", desc: "프론트 백",   code: "|E10E10100|E20E20100|E30E30100|", color: "orange" },
+      { id: "R/C", name: "R/C", desc: "리어 쿠션",   code: "|E10E10100|E20E20110|E30E30110|", color: "emerald" },
+      { id: "R/B", name: "R/B", desc: "리어 백",     code: "|E10E10100|E20E20100|E30E30110|", color: "teal" },
+      { id: "3/C", name: "3/C", desc: "3열 쿠션",    code: "|E10E10100|E20E20110|E30E30130|", color: "purple" },
+      { id: "3/B", name: "3/B", desc: "3열 백",      code: "|E10E10100|E20E20100|E30E30130|", color: "pink" }
+    ];
+
+    const MAX_PALLET_SEQ = 20;
+    const STORAGE_KEY = "PALLET_SEQ_SCANNER_STATE_V3";
+
+    /**
+     * 2. 애플리케이션 상태 관리
+     */
+    let state = {
+      screen: "HOME",
+      currentOrderTime: null,
+      currentLine: null,
+      currentItem: null,
+      soundEnabled: true,
+      facingMode: "environment",
+      externalScannerOnly: false,
+      records: {} // key: `${orderTime}__${lineId}__${itemId}` -> { lastScannedSeq: 0, passedSeqs: [], history: [] }
+    };
+
+    // 카메라 및 연속 스캔 제어 변수
+    let html5QrCode = null;
+    let isCameraRunning = false;
+    let isScanCooldown = false;
+    let lastAcceptedQr = "";
+    let lastAcceptedTimestamp = 0;
+    let feedbackTimeoutId = null;
+    let audioCtx = null;
+
+    // 다중 휴대폰 연동 (PeerJS 서버/클라이언트) 변수
+    let peerInstance = null;
+    let syncRole = "STANDALONE"; // "STANDALONE" | "HOST" | "CLIENT"
+    let syncRoomCode = "";
+    let hostConnections = [];
+    let clientConnection = null;
+
+    // 외장 스캐너(동글) HID 키보드 버퍼 변수
+    let hidBuffer = "";
+    let hidLastKeyTime = 0;
+    let hidClearTimer = null;
+
+    /**
+     * 3. 초기화 및 LocalStorage 연동
+     */
+    function initApp() {
+      loadStateFromStorage();
+      populateQrGeneratorSeqOptions();
+      populateHistoryFilterOptions();
+      setupExternalDongleScannerListener();
+      renderHomeScreen();
+      updateBottomButtonsContext();
+      updateSyncHeaderUI();
+    }
+
+    function getFormattedTimestamps() {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+      const hh = String(now.getHours()).padStart(2, "0");
+      const mi = String(now.getMinutes()).padStart(2, "0");
+      const ss = String(now.getSeconds()).padStart(2, "0");
+      return {
+        dateStr: `${yyyy}-${mm}-${dd}`,
+        timeStr: `${hh}:${mi}:${ss}`,
+        fullTime: `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`
+      };
+    }
+
+    function getRecordKey(orderTime, lineId, itemId) {
+      const ot = orderTime || state.currentOrderTime || ORDER_TIMES[0].id;
+      return `${ot}__${lineId}__${itemId}`;
+    }
+
+    function ensureRecordSlot(orderTime, lineId, itemId) {
+      const key = getRecordKey(orderTime, lineId, itemId);
+      if (!state.records[key]) {
+        state.records[key] = {
+          lastScannedSeq: 0,
+          passedSeqs: [],
+          history: []
+        };
+      } else {
+        if (!Array.isArray(state.records[key].passedSeqs)) state.records[key].passedSeqs = [];
+        if (!Array.isArray(state.records[key].history)) state.records[key].history = [];
+      }
+      return state.records[key];
+    }
+
+    function ensureAllRecordsExist() {
+      ORDER_TIMES.forEach(ot => {
+        LINES.forEach(line => {
+          ITEMS.forEach(item => {
+            ensureRecordSlot(ot.id, line.id, item.id);
+          });
+        });
+      });
+    }
+
+    function loadStateFromStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.records) state.records = parsed.records;
+          if (typeof parsed.soundEnabled === "boolean") state.soundEnabled = parsed.soundEnabled;
+          if (typeof parsed.externalScannerOnly === "boolean") state.externalScannerOnly = parsed.externalScannerOnly;
+        }
+      } catch (e) {
+        console.warn("스토리지 로드 오류:", e);
+      }
+      ensureAllRecordsExist();
+      updateSoundToggleUI();
+    }
+
+    function saveStateToStorage() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          records: state.records,
+          soundEnabled: state.soundEnabled,
+          externalScannerOnly: state.externalScannerOnly
+        }));
+      } catch (e) {
+        console.warn("스토리지 저장 오류:", e);
+      }
+    }
+
+    /**
+     * 4. 다중 휴대폰 실시간 서버/단말기 연동 (PeerJS WebRTC)
+     */
+    function openSyncModal() {
+      document.getElementById("sync-modal").classList.remove("hidden");
+      refreshSyncModalUI();
+    }
+
+    function closeSyncModal() {
+      document.getElementById("sync-modal").classList.add("hidden");
+    }
+
+    function updateSyncHeaderUI() {
+      const dot = document.getElementById("sync-status-dot");
+      const text = document.getElementById("sync-status-text");
+      const btn = document.getElementById("btn-sync-status");
+
+      if (syncRole === "HOST") {
+        dot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-ping";
+        text.textContent = `서버(${hostConnections.length}대)`;
+        btn.className = "px-2 py-2 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-[11px] font-extrabold text-emerald-300 flex items-center gap-1 transition active:scale-95";
+      } else if (syncRole === "CLIENT") {
+        const isConnected = clientConnection && clientConnection.open;
+        dot.className = `w-2 h-2 rounded-full ${isConnected ? 'bg-cyan-400 animate-ping' : 'bg-amber-400'}`;
+        text.textContent = isConnected ? `연결(${syncRoomCode})` : `재연결..`;
+        btn.className = "px-2 py-2 rounded-xl bg-cyan-950/70 border border-cyan-500/50 text-[11px] font-extrabold text-cyan-300 flex items-center gap-1 transition active:scale-95";
+      } else {
+        dot.className = "w-2 h-2 rounded-full bg-slate-500";
+        text.textContent = "서버연동";
+        btn.className = "px-2 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-bold text-slate-200 flex items-center gap-1 transition active:scale-95";
+      }
+    }
+
+    function refreshSyncModalUI() {
+      const badge = document.getElementById("modal-sync-role-badge");
+      const detail = document.getElementById("modal-sync-detail");
+      const hostBox = document.getElementById("host-code-display-box");
+
+      if (syncRole === "HOST") {
+        badge.className = "px-2 py-0.5 rounded-lg bg-emerald-500 text-slate-950 font-black";
+        badge.textContent = `메인 서버 가동중 (코드: ${syncRoomCode})`;
+        detail.textContent = `현재 ${hostConnections.length}대의 휴대폰이 연결되어 모든 스캔이력과 시간이 실시간 취합 중입니다.`;
+        hostBox.classList.remove("hidden");
+        document.getElementById("host-room-code-text").textContent = syncRoomCode;
+        document.getElementById("host-client-count-text").textContent = `연결된 단말기: ${hostConnections.length}대`;
+      } else if (syncRole === "CLIENT") {
+        const isConnected = clientConnection && clientConnection.open;
+        badge.className = "px-2 py-0.5 rounded-lg bg-cyan-500 text-slate-950 font-black";
+        badge.textContent = isConnected ? `단말기 연결됨 (서버: ${syncRoomCode})` : `서버(${syncRoomCode}) 연결 대기중`;
+        detail.textContent = "서버 휴대폰과 모든 진행사항(스캔시간/이력/PASS/초기화)이 실시간 공유됩니다.";
+        hostBox.classList.add("hidden");
+      } else {
+        badge.className = "px-2 py-0.5 rounded-lg bg-slate-800 text-slate-300 font-black";
+        badge.textContent = "단독 사용 모드";
+        detail.textContent = "여러 명이 함께 사용하려면 1대를 [서버 시작]으로 설정하세요.";
+        hostBox.classList.add("hidden");
+      }
+    }
+
+    function startAsHostServer() {
+      disconnectSyncSession(false);
+
+      let savedCode = localStorage.getItem("PALLET_HOST_CODE");
+      if (!savedCode || !/^\d{4}$/.test(savedCode)) {
+        savedCode = String(Math.floor(1000 + Math.random() * 9000));
+        localStorage.setItem("PALLET_HOST_CODE", savedCode);
+      }
+      syncRoomCode = savedCode;
+      syncRole = "HOST";
+
+      const peerId = `pallet-seq-host-${syncRoomCode}`;
+      peerInstance = new Peer(peerId);
+
+      peerInstance.on("open", () => {
+        updateSyncHeaderUI();
+        refreshSyncModalUI();
+        playSoundFeedback("OK");
+      });
+
+      peerInstance.on("connection", (conn) => {
+        hostConnections.push(conn);
+        updateSyncHeaderUI();
+        refreshSyncModalUI();
+
+        conn.on("open", () => {
+          conn.send({
+            type: "FULL_SYNC",
+            records: state.records
+          });
+          updateSyncHeaderUI();
+          refreshSyncModalUI();
+        });
+
+        conn.on("data", (data) => {
+          handleIncomingSyncMessage(data, conn);
+        });
+
+        conn.on("close", () => {
+          hostConnections = hostConnections.filter(c => c !== conn);
+          updateSyncHeaderUI();
+          refreshSyncModalUI();
+        });
+      });
+
+      peerInstance.on("error", (err) => {
+        console.warn("Peer Host Error:", err);
+        if (err.type === "unavailable-id") {
+          localStorage.removeItem("PALLET_HOST_CODE");
+          startAsHostServer();
+        }
+      });
+
+      updateSyncHeaderUI();
+      refreshSyncModalUI();
+    }
+
+    function connectAsClient() {
+      const codeInput = document.getElementById("client-room-code-input").value.trim();
+      if (!/^\d{4}$/.test(codeInput)) {
+        alert("서버 휴대폰에 표시된 4자리 숫자를 정확히 입력해주세요.");
+        return;
+      }
+
+      disconnectSyncSession(false);
+      syncRoomCode = codeInput;
+      syncRole = "CLIENT";
+
+      peerInstance = new Peer();
+
+      peerInstance.on("open", () => {
+        const hostPeerId = `pallet-seq-host-${syncRoomCode}`;
+        clientConnection = peerInstance.connect(hostPeerId, { reliable: true });
+
+        clientConnection.on("open", () => {
+          updateSyncHeaderUI();
+          refreshSyncModalUI();
+          playSoundFeedback("OK");
+          clientConnection.send({ type: "REQUEST_SYNC" });
+        });
+
+        clientConnection.on("data", (data) => {
+          handleIncomingSyncMessage(data, null);
+        });
+
+        clientConnection.on("close", () => {
+          updateSyncHeaderUI();
+          refreshSyncModalUI();
+        });
+      });
+
+      peerInstance.on("error", (err) => {
+        console.warn("Peer Client Error:", err);
+        updateSyncHeaderUI();
+        refreshSyncModalUI();
+      });
+
+      updateSyncHeaderUI();
+      refreshSyncModalUI();
+    }
+
+    function disconnectSyncSession(updateUI = true) {
+      if (clientConnection) {
+        try { clientConnection.close(); } catch (e) {}
+        clientConnection = null;
+      }
+      if (hostConnections.length > 0) {
+        hostConnections.forEach(c => { try { c.close(); } catch (e) {} });
+        hostConnections = [];
+      }
+      if (peerInstance) {
+        try { peerInstance.destroy(); } catch (e) {}
+        peerInstance = null;
+      }
+      syncRole = "STANDALONE";
+      syncRoomCode = "";
+      if (updateUI) {
+        updateSyncHeaderUI();
+        refreshSyncModalUI();
+      }
+    }
+
+    function broadcastStateSync() {
+      const payload = {
+        type: "FULL_SYNC",
+        records: state.records
+      };
+
+      if (syncRole === "HOST") {
+        hostConnections.forEach(conn => {
+          if (conn && conn.open) {
+            conn.send(payload);
+          }
+        });
+      } else if (syncRole === "CLIENT" && clientConnection && clientConnection.open) {
+        clientConnection.send(payload);
+      }
+    }
+
+    function handleIncomingSyncMessage(data, senderConn) {
+      if (!data || !data.type) return;
+
+      if (data.type === "REQUEST_SYNC" && syncRole === "HOST" && senderConn) {
+        senderConn.send({
+          type: "FULL_SYNC",
+          records: state.records
+        });
+        return;
+      }
+
+      if (data.type === "FULL_SYNC") {
+        if (data.records) state.records = data.records;
+        ensureAllRecordsExist();
+        saveStateToStorage();
+        refreshCurrentScreenUI();
+
+        // 이력 모달이 열려 있다면 실시간 갱신
+        const historyModal = document.getElementById("history-export-modal");
+        if (historyModal && !historyModal.classList.contains("hidden")) {
+          renderServerHistoryModalList();
+        }
+
+        // 서버 휴대폰이 단말기로부터 받은 데이터를 다른 모든 단말기에도 즉시 전파
+        if (syncRole === "HOST") {
+          hostConnections.forEach(conn => {
+            if (conn && conn.open && conn !== senderConn) {
+              conn.send({
+                type: "FULL_SYNC",
+                records: state.records
+              });
+            }
+          });
+        }
+      }
+    }
+
+    function refreshCurrentScreenUI() {
+      if (state.screen === "HOME") renderHomeScreen();
+      else if (state.screen === "LINES") renderLineScreen();
+      else if (state.screen === "ITEMS") renderItemButtons(state.currentLine);
+      else if (state.screen === "SCANNER") renderScannerScreenUI();
+    }
+
+    /**
+     * 5. 서버 통합 스캔이력 조회 및 메신저 전송용 다운로드 기능
+     */
+    function populateHistoryFilterOptions() {
+      const sel = document.getElementById("filter-order-time");
+      if (!sel) return;
+      let html = `<option value="ALL">전체 오더시간 (8회차)</option>`;
+      ORDER_TIMES.forEach(ot => {
+        html += `<option value="${ot.id}">${ot.id} (${ot.step})</option>`;
+      });
+      sel.innerHTML = html;
+    }
+
+    function collectAllScanHistoryEntries(filterOrder = "ALL", filterLine = "ALL", filterStatus = "ALL") {
+      const allEntries = [];
+
+      ORDER_TIMES.forEach(ot => {
+        if (filterOrder !== "ALL" && ot.id !== filterOrder) return;
+        LINES.forEach(line => {
+          if (filterLine !== "ALL" && line.id !== filterLine) return;
+          ITEMS.forEach(item => {
+            const rec = ensureRecordSlot(ot.id, line.id, item.id);
+            if (rec && Array.isArray(rec.history)) {
+              rec.history.forEach((h, idx) => {
+                if (filterStatus !== "ALL" && h.status !== filterStatus) return;
+                allEntries.push({
+                  orderTime: ot.id,
+                  lineId: line.id,
+                  itemId: item.id,
+                  seq: h.seq,
+                  status: h.status,
+                  qr: h.qr || "",
+                  time: h.time || "",
+                  fullTime: h.fullTime || h.time || "",
+                  device: h.device || "단말기",
+                  message: h.message || "",
+                  sortIndex: h.timestampMs || idx
+                });
+              });
+            }
+          });
+        });
+      });
+
+      // 최신 스캔 순 정렬
+      allEntries.sort((a, b) => b.sortIndex - a.sortIndex);
+      return allEntries;
+    }
+
+    function openHistoryExportModal() {
+      // 현재 선택된 오더시간/라인이 있으면 기본 필터로 세팅
+      const orderSelect = document.getElementById("filter-order-time");
+      const lineSelect = document.getElementById("filter-line");
+      if (state.currentOrderTime) {
+        orderSelect.value = state.currentOrderTime;
+      } else {
+        orderSelect.value = "ALL";
+      }
+      if (state.currentLine) {
+        lineSelect.value = state.currentLine;
+      } else {
+        lineSelect.value = "ALL";
+      }
+
+      const roleTag = document.getElementById("export-modal-role-tag");
+      if (syncRole === "HOST") {
+        roleTag.textContent = `서버 통합 (${hostConnections.length}대 연동중)`;
+      } else if (syncRole === "CLIENT") {
+        roleTag.textContent = `서버(${syncRoomCode}) 동기화됨`;
+      } else {
+        roleTag.textContent = "단독 기록";
+      }
+
+      document.getElementById("history-export-modal").classList.remove("hidden");
+      renderServerHistoryModalList();
+    }
+
+    function closeHistoryExportModal() {
+      document.getElementById("history-export-modal").classList.add("hidden");
+    }
+
+    function renderServerHistoryModalList() {
+      const filterOrder = document.getElementById("filter-order-time").value;
+      const filterLine = document.getElementById("filter-line").value;
+      const filterStatus = document.getElementById("filter-status").value;
+
+      const entries = collectAllScanHistoryEntries(filterOrder, filterLine, filterStatus);
+
+      let okCount = 0;
+      let passCount = 0;
+      let ngCount = 0;
+      entries.forEach(e => {
+        if (e.status === "OK") okCount++;
+        else if (e.status === "PASS") passCount++;
+        else ngCount++;
+      });
+
+      document.getElementById("export-total-count").textContent = `${entries.length}건`;
+      document.getElementById("export-ok-count").textContent = okCount;
+      document.getElementById("export-pass-count").textContent = passCount;
+      document.getElementById("export-ng-count").textContent = ngCount;
+
+      const listEl = document.getElementById("server-history-modal-list");
+      if (entries.length === 0) {
+        listEl.innerHTML = `
+          <div class="text-xs text-slate-500 text-center py-10">
+            해당 조건에 기록된 스캔 이력이 없습니다.
+          </div>
+        `;
+        return;
+      }
+
+      listEl.innerHTML = entries.map(entry => {
+        const isOk = entry.status === "OK";
+        const isPass = entry.status === "PASS";
+        const badgeClass = isOk
+          ? "bg-emerald-500 text-slate-950"
+          : isPass
+          ? "bg-amber-400 text-slate-950"
+          : "bg-rose-500 text-white";
+        const statusLabel = isOk ? "정상(OK)" : isPass ? "PASS" : "오류(NG)";
+
+        return `
+          <div class="rounded-xl p-2.5 bg-slate-900 border border-slate-800 text-xs flex flex-col gap-1">
+            <div class="flex items-center justify-between gap-1">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 font-black text-[10px]">${entry.orderTime}</span>
+                <span class="px-1.5 py-0.5 rounded bg-blue-600/30 border border-blue-500/40 text-blue-200 font-black text-[10px]">${entry.lineId}라인</span>
+                <span class="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 font-black text-[10px]">${entry.itemId}</span>
+                <span class="px-1.5 py-0.5 rounded font-black text-[10px] ${badgeClass}">${entry.seq}번 ${statusLabel}</span>
+              </div>
+              <span class="text-[11px] font-mono font-bold text-cyan-300 shrink-0">${entry.fullTime}</span>
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-slate-400 pt-0.5">
+              <span class="truncate font-mono text-slate-300">${entry.qr}</span>
+              <span class="text-[10px] text-slate-500 shrink-0 ml-2">${entry.device}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    // 엑셀 호환 CSV 문자열 생성 (UTF-8 BOM 포함)
+    function buildCsvContent() {
+      const filterOrder = document.getElementById("filter-order-time").value;
+      const filterLine = document.getElementById("filter-line").value;
+      const filterStatus = document.getElementById("filter-status").value;
+      const entries = collectAllScanHistoryEntries(filterOrder, filterLine, filterStatus).slice().reverse();
+
+      const headers = ["번호", "스캔일시(시간)", "오더발행시간", "라인", "품목", "파렛트순번", "판정결과", "스캔QR코드", "단말기구분", "상세내역"];
+      const rows = [headers.join(",")];
+
+      entries.forEach((e, idx) => {
+        const statusText = e.status === "OK" ? "정상(OK)" : e.status === "PASS" ? "PASS(건너뜀)" : "오류(NG)";
+        const safeQr = `"${String(e.qr).replace(/"/g, '""')}"`;
+        const safeMsg = `"${String(e.message).replace(/"/g, '""')}"`;
+        rows.push([
+          idx + 1,
+          `"${e.fullTime}"`,
+          `"${e.orderTime}"`,
+          `"${e.lineId}라인"`,
+          `"${e.itemId}"`,
+          `${e.seq}번`,
+          `"${statusText}"`,
+          safeQr,
+          `"${e.device}"`,
+          safeMsg
+        ].join(","));
+      });
+
+      return "\uFEFF" + rows.join("\r\n");
+    }
+
+    // 메신저 공유/텍스트 다운로드용 요약 텍스트 생성
+    function buildMessengerReportText() {
+      const filterOrder = document.getElementById("filter-order-time").value;
+      const filterLine = document.getElementById("filter-line").value;
+      const filterStatus = document.getElementById("filter-status").value;
+      const entries = collectAllScanHistoryEntries(filterOrder, filterLine, filterStatus).slice().reverse();
+      const ts = getFormattedTimestamps();
+
+      let lines = [];
+      lines.push(`[파렛트 순번 투입 스캔이력 보고]`);
+      lines.push(`■ 출력일시: ${ts.fullTime}`);
+      lines.push(`■ 조회조건: 오더(${filterOrder === 'ALL' ? '전체' : filterOrder}) / 라인(${filterLine === 'ALL' ? '전체' : filterLine + '라인'})`);
+      lines.push(`■ 총 기록건수: ${entries.length}건`);
+      lines.push(`----------------------------------------`);
+
+      if (entries.length === 0) {
+        lines.push(`스캔 기록이 없습니다.`);
+      } else {
+        entries.forEach((e, idx) => {
+          const st = e.status === "OK" ? "정상" : e.status === "PASS" ? "PASS" : "오류(NG)";
+          lines.push(`${idx + 1}. [${e.fullTime}] 오더:${e.orderTime} | ${e.lineId}라인 | ${e.itemId} | ${e.seq}번 | ${st} | QR:${e.qr}`);
+        });
+      }
+
+      return lines.join("\r\n");
+    }
+
+    function downloadHistoryAsCsv() {
+      const csvContent = buildCsvContent();
+      const ts = getFormattedTimestamps();
+      const fileName = `파렛트스캔이력_${ts.dateStr}_${ts.timeStr.replace(/:/g, "")}.csv`;
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+
+    function downloadHistoryAsTxt() {
+      const txtContent = buildMessengerReportText();
+      const ts = getFormattedTimestamps();
+      const fileName = `파렛트스캔이력_${ts.dateStr}_${ts.timeStr.replace(/:/g, "")}.txt`;
+
+      const blob = new Blob([txtContent], { type: "text/plain;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+
+    async function shareHistoryToMessenger() {
+      const reportText = buildMessengerReportText();
+      const csvContent = buildCsvContent();
+      const ts = getFormattedTimestamps();
+      const fileName = `파렛트스캔이력_${ts.dateStr}_${ts.timeStr.replace(/:/g, "")}.csv`;
+
+      if (navigator.share) {
+        try {
+          const file = new File([csvContent], fileName, { type: "text/csv" });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              title: "파렛트 순번 투입 스캔이력",
+              text: reportText,
+              files: [file]
+            });
+            return;
+          }
+          await navigator.share({
+            title: "파렛트 순번 투입 스캔이력",
+            text: reportText
+          });
+          return;
+        } catch (err) {
+          console.warn("공유 취소 또는 전환:", err);
+        }
+      }
+      // Web Share 미지원 기기에서는 클립보드 복사 + CSV 다운로드 동시 수행
+      await copyHistoryForMessenger();
+      downloadHistoryAsCsv();
+    }
+
+    async function copyHistoryForMessenger() {
+      const reportText = buildMessengerReportText();
+      const btnText = document.getElementById("btn-copy-messenger-text");
+      try {
+        await navigator.clipboard.writeText(reportText);
+        btnText.textContent = "✓ 복사완료 (메신저에 붙여넣기)";
+        playSoundFeedback("OK");
+        setTimeout(() => {
+          btnText.textContent = "메신저용 텍스트 복사";
+        }, 2200);
+      } catch (e) {
+        const textarea = document.createElement("textarea");
+        textarea.value = reportText;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+        btnText.textContent = "✓ 복사완료 (메신저에 붙여넣기)";
+        setTimeout(() => {
+          btnText.textContent = "메신저용 텍스트 복사";
+        }, 2200);
+      }
+    }
+
+    /**
+     * 6. 외장 스캐너(동글 - USB/블루투스 HID) 감지 및 한/영 오타 자동 보정
+     */
+    const KOR_TO_ENG_MAP = {
+      'ㅂ':'Q', 'ㅈ':'W', 'ㄷ':'E', 'ㄱ':'R', 'ㅅ':'T', 'ㅛ':'Y', 'ㅕ':'U', 'ㅑ':'I', 'ㅐ':'O', 'ㅔ':'P',
+      'ㅁ':'A', 'ㄴ':'S', 'ㅇ':'D', 'ㄹ':'F', 'ㅎ':'G', 'ㅗ':'H', 'ㅓ':'J', 'ㅏ':'K', 'ㅣ':'L',
+      'ㅋ':'Z', 'ㅌ':'X', 'ㅊ':'C', 'ㅍ':'V', 'ㅠ':'B', 'ㅜ':'N', 'ㅡ':'M',
+      'ㅃ':'Q', 'ㅉ':'W', 'ㄸ':'E', 'ㄲ':'R', 'ㅆ':'T', 'ㅒ':'O', 'ㅖ':'P'
+    };
+
+    function normalizeDongleQrString(rawStr) {
+      if (!rawStr) return "";
+      let result = "";
+      for (const ch of rawStr) {
+        if (KOR_TO_ENG_MAP[ch]) {
+          result += KOR_TO_ENG_MAP[ch];
+        } else {
+          result += ch;
+        }
+      }
+      return result.toUpperCase().trim();
+    }
+
+    function setupExternalDongleScannerListener() {
+      window.addEventListener("keydown", (e) => {
+        const activeTag = document.activeElement ? document.activeElement.tagName : "";
+        const activeId = document.activeElement ? document.activeElement.id : "";
+        if ((activeTag === "INPUT" || activeTag === "SELECT" || activeTag === "TEXTAREA") && activeId !== "hid-scanner-catcher") {
+          return;
+        }
+
+        if (state.screen !== "SCANNER") return;
+
+        const now = Date.now();
+        if (now - hidLastKeyTime > 600) {
+          hidBuffer = "";
+        }
+        hidLastKeyTime = now;
+
+        if (e.key === "Enter" || e.key === "Tab") {
+          if (hidBuffer.length >= 3) {
+            e.preventDefault();
+            const finalCode = normalizeDongleQrString(hidBuffer);
+            hidBuffer = "";
+            flashDongleIndicator(finalCode);
+            onQrCodeScanned(finalCode);
+          }
+          return;
+        }
+
+        if (e.key && e.key.length === 1) {
+          if (e.code && e.code.startsWith("Key")) {
+            hidBuffer += e.code.replace("Key", "");
+          } else if (e.code && e.code.startsWith("Digit")) {
+            hidBuffer += e.code.replace("Digit", "");
+          } else if (e.code === "Backslash" && e.shiftKey) {
+            hidBuffer += "|";
+          } else {
+            hidBuffer += e.key;
+          }
+        }
+
+        if (hidClearTimer) clearTimeout(hidClearTimer);
+        hidClearTimer = setTimeout(() => {
+          if (hidBuffer.includes("|") && hidBuffer.length >= 15) {
+            const finalCode = normalizeDongleQrString(hidBuffer);
+            hidBuffer = "";
+            flashDongleIndicator(finalCode);
+            onQrCodeScanned(finalCode);
+          }
+        }, 180);
+      });
+    }
+
+    function flashDongleIndicator(scannedStr) {
+      const dot = document.getElementById("dongle-indicator-dot");
+      const txt = document.getElementById("dongle-status-text");
+      if (!dot || !txt) return;
+      dot.className = "w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping shrink-0";
+      txt.textContent = `외장 스캐너 수신: ${scannedStr}`;
+      setTimeout(() => {
+        dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0";
+        txt.textContent = "외장 스캐너(동글) 상시 대기중 (한/영 자동변환)";
+      }, 2200);
+    }
+
+    async function toggleExternalScannerOnlyMode() {
+      state.externalScannerOnly = !state.externalScannerOnly;
+      saveStateToStorage();
+      updateExternalScannerToggleUI();
+
+      if (state.externalScannerOnly) {
+        await stopScannerCamera();
+        const fallbackBox = document.getElementById("camera-fallback-box");
+        fallbackBox.classList.remove("hidden");
+        document.getElementById("camera-fallback-title").textContent = "외장 스캐너(동글) 전용 대기 모드";
+        document.getElementById("camera-error-msg").textContent =
+          "카메라가 꺼져 있으며 외장 스캐너(동글) 입력을 상시 대기 중입니다. 동글로 파렛트 QR을 스캔하세요.";
+      } else {
+        await startScannerCamera();
+      }
+    }
+
+    async function enableCameraMode() {
+      state.externalScannerOnly = false;
+      saveStateToStorage();
+      updateExternalScannerToggleUI();
+      await startScannerCamera();
+    }
+
+    function updateExternalScannerToggleUI() {
+      const btn = document.getElementById("btn-toggle-camera-mode");
+      if (!btn) return;
+      if (state.externalScannerOnly) {
+        btn.textContent = "휴대폰 카메라 켜기";
+        btn.className = "px-2.5 py-1 rounded-lg bg-cyan-500 text-slate-950 text-[11px] font-black shrink-0 active:scale-95 transition";
+      } else {
+        btn.textContent = "외장스캐너 전용 (카메라 끔)";
+        btn.className = "px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[11px] font-bold text-cyan-300 shrink-0 active:scale-95 transition";
+      }
+    }
+
+    /**
+     * 7. QR 코드 생성 및 파싱/검증 로직
+     */
+    function getItemConfig(itemId) {
+      return ITEMS.find(i => i.id === itemId);
+    }
+
+    function getLineConfig(lineId) {
+      return LINES.find(l => l.id === lineId);
+    }
+
+    function buildExpectedQrString(lineId, itemId, seqNumber) {
+      const itemObj = getItemConfig(itemId);
+      if (!itemObj) return "";
+      return `${lineId}${itemObj.code}${seqNumber}`;
+    }
+
+    function parseScannedQrString(rawQr) {
+      const cleaned = normalizeDongleQrString(rawQr || "");
+      let matchedItem = null;
+      for (const item of ITEMS) {
+        if (cleaned.includes(item.code)) {
+          matchedItem = item;
+          break;
+        }
+      }
+
+      if (!matchedItem) {
+        const parts = cleaned.split("|");
+        if (parts.length === 5) {
+          const possibleLine = parts[0];
+          const possibleCode = `|${parts[1]}|${parts[2]}|${parts[3]}|`;
+          const possibleSeq = parseInt(parts[4], 10);
+          return {
+            validFormat: false,
+            raw: cleaned,
+            lineId: possibleLine,
+            itemId: null,
+            unknownCode: possibleCode,
+            seq: isNaN(possibleSeq) ? null : possibleSeq
+          };
+        }
+        return { validFormat: false, raw: cleaned };
+      }
+
+      const idx = cleaned.indexOf(matchedItem.code);
+      const prefixLine = cleaned.substring(0, idx);
+      const suffixSeqStr = cleaned.substring(idx + matchedItem.code.length);
+      const seqNum = /^\d+$/.test(suffixSeqStr) ? parseInt(suffixSeqStr, 10) : NaN;
+
+      return {
+        validFormat: !isNaN(seqNum) && prefixLine.length > 0,
+        raw: cleaned,
+        lineId: prefixLine,
+        itemId: matchedItem.id,
+        itemCode: matchedItem.code,
+        seq: isNaN(seqNum) ? null : seqNum
+      };
+    }
+
+    /**
+     * 8. 효과음 (Web Audio API) & 스캔 오류 시 고출력 사이렌 경보음
+     */
+    function getAudioContext() {
+      if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) {
+          audioCtx = new AudioContextClass();
+        }
+      }
+      if (audioCtx && audioCtx.state === "suspended") {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    function playSoundFeedback(type) {
+      if (!state.soundEnabled) return;
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+
+        const now = ctx.currentTime;
+        if (type === "OK") {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(1046.5, now);
+          osc.frequency.setValueAtTime(1567.98, now + 0.09);
+          gain.gain.setValueAtTime(0.3, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.26);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.26);
+
+          if (navigator.vibrate) navigator.vibrate(80);
+        } else if (type === "PASS") {
+          [587.33, 880].forEach((freq, idx) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "triangle";
+            osc.frequency.setValueAtTime(freq, now + idx * 0.09);
+            gain.gain.setValueAtTime(0.35, now + idx * 0.09);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.09 + 0.18);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + idx * 0.09);
+            osc.stop(now + idx * 0.09 + 0.18);
+          });
+          if (navigator.vibrate) navigator.vibrate([70, 50, 70]);
+        } else if (type === "COMPLETE") {
+          [1046.5, 1318.5, 1567.98].forEach((freq, idx) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "triangle";
+            osc.frequency.setValueAtTime(freq, now + idx * 0.1);
+            gain.gain.setValueAtTime(0.35, now + idx * 0.1);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.1 + 0.24);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + idx * 0.1);
+            osc.stop(now + idx * 0.1 + 0.24);
+          });
+          if (navigator.vibrate) navigator.vibrate([100, 60, 150]);
+        } else {
+          // 스캔 오류(NG) 발생 시 강렬한 고출력 사이렌 경보음
+          const compressor = ctx.createDynamicsCompressor();
+          compressor.threshold.setValueAtTime(-12, now);
+          compressor.knee.setValueAtTime(0, now);
+          compressor.ratio.setValueAtTime(20, now);
+          compressor.attack.setValueAtTime(0.001, now);
+          compressor.release.setValueAtTime(0.05, now);
+          compressor.connect(ctx.destination);
+
+          const pulseOffsets = [0, 0.24, 0.48, 0.72];
+          pulseOffsets.forEach((offset, idx) => {
+            const startTime = now + offset;
+            const duration = idx === 3 ? 0.36 : 0.20;
+
+            const osc1 = ctx.createOscillator();
+            const osc2 = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc1.type = "sawtooth";
+            osc2.type = "square";
+
+            osc1.frequency.setValueAtTime(920, startTime);
+            osc1.frequency.linearRampToValueAtTime(310, startTime + duration);
+
+            osc2.frequency.setValueAtTime(650, startTime);
+            osc2.frequency.linearRampToValueAtTime(185, startTime + duration);
+
+            gain.gain.setValueAtTime(0.95, startTime);
+            gain.gain.setValueAtTime(0.95, startTime + duration - 0.03);
+            gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+
+            osc1.connect(gain);
+            osc2.connect(gain);
+            gain.connect(compressor);
+
+            osc1.start(startTime);
+            osc2.start(startTime);
+            osc1.stop(startTime + duration);
+            osc2.stop(startTime + duration);
+          });
+
+          if (navigator.vibrate) {
+            navigator.vibrate([350, 90, 350, 90, 500]);
+          }
+        }
+      } catch (e) {
+        console.warn("오디오 재생 예외:", e);
+      }
+    }
+
+    function toggleSound() {
+      state.soundEnabled = !state.soundEnabled;
+      updateSoundToggleUI();
+      saveStateToStorage();
+      if (state.soundEnabled) playSoundFeedback("OK");
+    }
+
+    function updateSoundToggleUI() {
+      const onIcon = document.getElementById("icon-sound-on");
+      const offIcon = document.getElementById("icon-sound-off");
+      if (state.soundEnabled) {
+        onIcon.classList.remove("hidden");
+        offIcon.classList.add("hidden");
+      } else {
+        onIcon.classList.add("hidden");
+        offIcon.classList.remove("hidden");
+      }
+    }
+
+    /**
+     * 9. 화면 전환 (네비게이션)
+     */
+    async function navigateToHome() {
+      await stopScannerCamera();
+      state.screen = "HOME";
+      state.currentOrderTime = null;
+      state.currentLine = null;
+      state.currentItem = null;
+
+      document.getElementById("screen-home").classList.remove("hidden");
+      document.getElementById("screen-lines").classList.add("hidden");
+      document.getElementById("screen-items").classList.add("hidden");
+      document.getElementById("screen-scanner").classList.add("hidden");
+      document.getElementById("header-Subtitle").textContent = "홈 화면 · 오더발행 시간을 선택하세요";
+
+      renderHomeScreen();
+      updateBottomButtonsContext();
+    }
+
+    async function navigateToLines(orderTimeId) {
+      await stopScannerCamera();
+      state.screen = "LINES";
+      state.currentOrderTime = orderTimeId;
+      state.currentLine = null;
+      state.currentItem = null;
+
+      ensureAllRecordsExist();
+
+      document.getElementById("line-screen-order-badge").textContent = `${orderTimeId} 오더`;
+      document.getElementById("header-Subtitle").textContent = `[${orderTimeId} 오더] · 투입할 라인을 선택하세요`;
+
+      document.getElementById("screen-home").classList.add("hidden");
+      document.getElementById("screen-lines").classList.remove("hidden");
+      document.getElementById("screen-items").classList.add("hidden");
+      document.getElementById("screen-scanner").classList.add("hidden");
+
+      renderLineScreen();
+      updateBottomButtonsContext();
+    }
+
+    async function navigateToItems(lineId) {
+      await stopScannerCamera();
+      state.screen = "ITEMS";
+      state.currentLine = lineId;
+      state.currentItem = null;
+
+      const lineObj = getLineConfig(lineId);
+      document.getElementById("item-screen-order-badge").textContent = `${state.currentOrderTime} 오더`;
+      document.getElementById("selected-line-badge").textContent = lineObj.name;
+      document.getElementById("header-Subtitle").textContent = `[${state.currentOrderTime}] ${lineObj.name} · 품목 선택`;
+
+      document.getElementById("screen-home").classList.add("hidden");
+      document.getElementById("screen-lines").classList.add("hidden");
+      document.getElementById("screen-items").classList.remove("hidden");
+      document.getElementById("screen-scanner").classList.add("hidden");
+
+      renderItemButtons(lineId);
+      updateBottomButtonsContext();
+    }
+
+    async function navigateToScanner(lineId, itemId) {
+      getAudioContext();
+
+      state.screen = "SCANNER";
+      state.currentLine = lineId;
+      state.currentItem = itemId;
+      lastAcceptedQr = "";
+      isScanCooldown = false;
+
+      document.getElementById("screen-home").classList.add("hidden");
+      document.getElementById("screen-lines").classList.add("hidden");
+      document.getElementById("screen-items").classList.add("hidden");
+      document.getElementById("screen-scanner").classList.remove("hidden");
+
+      const lineObj = getLineConfig(lineId);
+      document.getElementById("header-Subtitle").textContent = `[${state.currentOrderTime}] ${lineObj.name} > ${itemId} 스캔 중`;
+
+      updateExternalScannerToggleUI();
+      renderScannerScreenUI();
+      updateBottomButtonsContext();
+
+      if (state.externalScannerOnly) {
+        await stopScannerCamera();
+        const fallbackBox = document.getElementById("camera-fallback-box");
+        fallbackBox.classList.remove("hidden");
+      } else {
+        await startScannerCamera();
+      }
+    }
+
+    function updateBottomButtonsContext() {
+      const resetTextEl = document.getElementById("btn-reset-text");
+      const passBtn = document.getElementById("btn-bottom-pass");
+      const passTextEl = document.getElementById("btn-pass-text");
+
+      if (state.screen === "SCANNER" && state.currentLine && state.currentItem) {
+        const rec = ensureRecordSlot(state.currentOrderTime, state.currentLine, state.currentItem);
+        const nextSeq = rec.lastScannedSeq + 1;
+        resetTextEl.textContent = `스캔완료(${state.currentItem})`;
+        passBtn.classList.remove("opacity-50");
+        passTextEl.textContent = rec.lastScannedSeq >= MAX_PALLET_SEQ ? "PASS(완료)" : `PASS(${nextSeq}번)`;
+      } else {
+        passBtn.classList.add("opacity-50");
+        passTextEl.textContent = "PASS";
+        if (state.screen === "ITEMS" && state.currentLine) {
+          resetTextEl.textContent = `스캔완료(${state.currentLine}라인)`;
+        } else if (state.screen === "LINES" && state.currentOrderTime) {
+          resetTextEl.textContent = `스캔완료(${state.currentOrderTime})`;
+        } else {
+          resetTextEl.textContent = "스캔완료(전체)";
+        }
+      }
+    }
+
+    /**
+     * 10. 각 화면 렌더링 함수
+     */
+    // STEP 1: 8가지 오더발행 시간 선택 홈 화면 렌더링
+    function renderHomeScreen() {
+      ensureAllRecordsExist();
+      const container = document.getElementById("order-time-buttons-container");
+      let grandTotalScanned = 0;
+      let totalHistoryCount = 0;
+
+      const html = ORDER_TIMES.map((ot) => {
+        let otScanned = 0;
+        const maxPerOrder = LINES.length * ITEMS.length * MAX_PALLET_SEQ; // 4 * 6 * 20 = 480
+
+        LINES.forEach(line => {
+          ITEMS.forEach(item => {
+            const rec = ensureRecordSlot(ot.id, line.id, item.id);
+            otScanned += rec.lastScannedSeq;
+            grandTotalScanned += rec.lastScannedSeq;
+            totalHistoryCount += rec.history.length;
+          });
+        });
+
+        const pct = Math.round((otScanned / maxPerOrder) * 100);
+        const isActiveProgress = otScanned > 0;
+
+        return `
+          <button onclick="navigateToLines('${ot.id}')"
+            class="rounded-3xl p-3.5 bg-slate-900 hover:bg-slate-800/95 border-2 ${isActiveProgress ? 'border-amber-500/60' : 'border-slate-800'} hover:border-cyan-400 shadow-lg flex flex-col justify-between text-left transition-all active:scale-95">
+            <div class="flex items-start justify-between w-full gap-1">
+              <div>
+                <span class="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                  ${ot.step}
+                </span>
+                <h3 class="text-2xl font-black text-white mt-1 tracking-tight leading-none font-mono">${ot.id}</h3>
+                <p class="text-[11px] text-slate-400 mt-1">${ot.desc}</p>
+              </div>
+              <span class="px-2 py-1 rounded-xl text-[11px] font-black ${otScanned >= maxPerOrder ? 'bg-emerald-500 text-slate-950' : isActiveProgress ? 'bg-cyan-400 text-slate-950' : 'bg-slate-800 text-slate-400'}">
+                ${otScanned}건
+              </span>
+            </div>
+
+            <div class="mt-3 w-full">
+              <div class="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                <div class="h-full bg-gradient-to-r from-amber-400 to-cyan-400 transition-all duration-300" style="width: ${pct}%"></div>
+              </div>
+              <div class="mt-1.5 flex items-center justify-between text-[11px] font-bold text-cyan-300">
+                <span>라인 선택</span>
+                <span>▶</span>
+              </div>
+            </div>
+          </button>
+        `;
+      }).join("");
+
+      container.innerHTML = html;
+      document.getElementById("home-total-scanned").textContent = `${grandTotalScanned}건`;
+      const badgeEl = document.getElementById("home-history-count-badge");
+      if (badgeEl) badgeEl.textContent = `${totalHistoryCount}건 기록 ▶`;
+    }
+
+    // STEP 2: 라인 선택 화면 렌더링
+    function renderLineScreen() {
+      const container = document.getElementById("line-buttons-container");
+      const ot = state.currentOrderTime;
+      let orderTotalScanned = 0;
+
+      const cardsHtml = LINES.map(line => {
+        let lineScannedCount = 0;
+        let activeItemsSummary = [];
+
+        ITEMS.forEach(item => {
+          const rec = ensureRecordSlot(ot, line.id, item.id);
+          const count = rec ? rec.lastScannedSeq : 0;
+          lineScannedCount += count;
+          orderTotalScanned += count;
+          activeItemsSummary.push({
+            id: item.id,
+            count
+          });
+        });
+
+        return `
+          <button onclick="navigateToItems('${line.id}')"
+            class="w-full text-left rounded-3xl p-4 bg-slate-900 hover:bg-slate-800/95 border-2 border-slate-800 hover:border-cyan-500/60 shadow-lg transition-all active:scale-[0.98] flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br ${line.accent} flex flex-col items-center justify-center text-white shadow-md">
+                  <span class="text-xs font-bold opacity-85">LINE</span>
+                  <span class="text-xl font-black leading-none">${line.id}</span>
+                </div>
+                <div>
+                  <h3 class="text-xl font-black text-white tracking-tight">${line.name}</h3>
+                  <p class="text-xs text-slate-400 mt-0.5">${line.desc}</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-slate-950 border border-slate-800 text-cyan-400 font-extrabold text-xs">
+                <span>품목 선택</span>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+              </div>
+            </div>
+
+            <!-- 6개 품목 미니 상태 배지 -->
+            <div class="grid grid-cols-6 gap-1.5 pt-2 border-t border-slate-800/90">
+              ${activeItemsSummary.map(s => `
+                <div class="rounded-xl px-1.5 py-1 text-center ${s.count > 0 ? 'bg-cyan-500/15 border border-cyan-500/40' : 'bg-slate-950/80 border border-slate-800'}">
+                  <div class="text-[11px] font-black ${s.count > 0 ? 'text-cyan-300' : 'text-slate-300'}">${s.id}</div>
+                  <div class="text-[10px] font-bold ${s.count >= MAX_PALLET_SEQ ? 'text-emerald-400' : s.count > 0 ? 'text-amber-300' : 'text-slate-500'}">
+                    ${s.count}/${MAX_PALLET_SEQ}
+                  </div>
+                </div>
+              `).join("")}
+            </div>
+          </button>
+        `;
+      }).join("");
+
+      container.innerHTML = cardsHtml;
+      document.getElementById("line-screen-total-scanned").textContent = `${orderTotalScanned}건 완료`;
+    }
+
+    // STEP 3: 품목 선택 화면 렌더링
+    function renderItemButtons(lineId) {
+      const container = document.getElementById("item-buttons-container");
+      const ot = state.currentOrderTime;
+
+      const colorMap = {
+        amber:   "from-amber-500/20 to-amber-600/5 border-amber-500/40 text-amber-300",
+        orange:  "from-orange-500/20 to-orange-600/5 border-orange-500/40 text-orange-300",
+        emerald: "from-emerald-500/20 to-emerald-600/5 border-emerald-500/40 text-emerald-300",
+        teal:    "from-teal-500/20 to-teal-600/5 border-teal-500/40 text-teal-300",
+        purple:  "from-purple-500/20 to-purple-600/5 border-purple-500/40 text-purple-300",
+        pink:    "from-pink-500/20 to-pink-600/5 border-pink-500/40 text-pink-300"
+      };
+
+      container.innerHTML = ITEMS.map(item => {
+        const rec = ensureRecordSlot(ot, lineId, item.id);
+        const lastSeq = rec ? rec.lastScannedSeq : 0;
+        const isCompleted = lastSeq >= MAX_PALLET_SEQ;
+        const nextSeq = isCompleted ? MAX_PALLET_SEQ : lastSeq + 1;
+        const pct = Math.round((lastSeq / MAX_PALLET_SEQ) * 100);
+
+        return `
+          <button onclick="navigateToScanner('${lineId}', '${item.id}')"
+            class="rounded-3xl p-4 bg-gradient-to-br ${colorMap[item.color]} bg-slate-900 border-2 hover:border-cyan-400 shadow-lg flex flex-col justify-between text-left transition-all active:scale-95">
+            <div class="flex items-start justify-between w-full">
+              <div>
+                <span class="text-2xl font-black text-white tracking-tight block">${item.name}</span>
+                <span class="text-xs text-slate-300 font-medium">${item.desc}</span>
+              </div>
+              <span class="px-2 py-1 rounded-xl text-[11px] font-black ${isCompleted ? 'bg-emerald-500 text-slate-950' : lastSeq > 0 ? 'bg-cyan-400 text-slate-950' : 'bg-slate-800 text-slate-300'}">
+                ${isCompleted ? '20번 완료' : `${nextSeq}번 대기`}
+              </span>
+            </div>
+
+            <div class="mt-4 w-full">
+              <div class="flex items-center justify-between text-xs mb-1">
+                <span class="text-slate-400 font-medium">최근 진행: <strong class="text-white">${lastSeq === 0 ? '없음' : lastSeq + '번'}</strong></span>
+                <span class="font-bold text-slate-200">${lastSeq}/${MAX_PALLET_SEQ}</span>
+              </div>
+              <div class="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                <div class="h-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all duration-300" style="width: ${pct}%"></div>
+              </div>
+              <div class="mt-2 flex items-center justify-between text-[11px] font-bold text-cyan-300">
+                <span>터치 시 스캐너 실행</span>
+                <span>▶</span>
+              </div>
+            </div>
+          </button>
+        `;
+      }).join("");
+    }
+
+    // STEP 4: 스캐너 화면 렌더링
+    function renderScannerScreenUI() {
+      const ot = state.currentOrderTime;
+      const lineId = state.currentLine;
+      const itemId = state.currentItem;
+      if (!lineId || !itemId) return;
+
+      const rec = ensureRecordSlot(ot, lineId, itemId);
+      const lastSeq = rec.lastScannedSeq;
+      const passedArr = rec.passedSeqs || [];
+      const isCompleted = lastSeq >= MAX_PALLET_SEQ;
+      const expectedSeq = isCompleted ? MAX_PALLET_SEQ : lastSeq + 1;
+
+      document.getElementById("scan-order-badge").textContent = `${ot} 오더`;
+      document.getElementById("scan-line-badge").textContent = `${lineId}라인`;
+      document.getElementById("scan-item-badge").textContent = itemId;
+
+      const seqDisplay = document.getElementById("scan-expected-seq-display");
+      const expectedQrEl = document.getElementById("scan-expected-qr-code");
+
+      if (isCompleted) {
+        seqDisplay.innerHTML = `<span class="text-emerald-400 text-lg">20/20 완료</span>`;
+        expectedQrEl.textContent = "1~20번 모든 파렛트 투입 완료 (하단 스캔완료 버튼으로 초기화)";
+      } else {
+        seqDisplay.innerHTML = `${expectedSeq}<span class="text-xs font-bold text-slate-400 ml-0.5">/ 20번</span>`;
+        expectedQrEl.textContent = buildExpectedQrString(lineId, itemId, expectedSeq);
+      }
+
+      document.getElementById("seq-progress-summary").textContent = `${lastSeq} / ${MAX_PALLET_SEQ}`;
+      const gridEl = document.getElementById("pallet-grid-20");
+      let gridHtml = "";
+      for (let i = 1; i <= MAX_PALLET_SEQ; i++) {
+        let boxClass = "";
+        let label = `${i}`;
+        if (i <= lastSeq) {
+          if (passedArr.includes(i)) {
+            boxClass = "bg-amber-500 text-slate-950 font-black border-amber-300 shadow-sm shadow-amber-500/30";
+            label = `${i}P`;
+          } else {
+            boxClass = "bg-emerald-500 text-slate-950 font-black border-emerald-400 shadow-sm shadow-emerald-500/30";
+          }
+        } else if (i === expectedSeq && !isCompleted) {
+          boxClass = "bg-cyan-500/30 text-cyan-200 font-black border-2 border-cyan-400 animate-pulse";
+        } else {
+          boxClass = "bg-slate-950 text-slate-500 font-bold border-slate-800";
+        }
+        gridHtml += `
+          <div class="h-7 rounded-lg border flex items-center justify-center text-[11px] ${boxClass}">
+            ${label}
+          </div>
+        `;
+      }
+      gridEl.innerHTML = gridHtml;
+
+      renderItemHistoryList(rec.history);
+      updateBottomButtonsContext();
+    }
+
+    function renderItemHistoryList(historyArr) {
+      const listEl = document.getElementById("item-history-list");
+      const countEl = document.getElementById("history-count-label");
+      countEl.textContent = `총 ${historyArr.length}건`;
+
+      if (!historyArr || historyArr.length === 0) {
+        listEl.innerHTML = `
+          <div class="text-xs text-slate-500 text-center py-4">
+            아직 스캔된 이력이 없습니다. 1번 파렛트부터 스캔하거나 PASS 버튼을 사용하세요.
+          </div>
+        `;
+        return;
+      }
+
+      listEl.innerHTML = historyArr.slice().reverse().map(entry => {
+        const isOk = entry.status === "OK";
+        const isPass = entry.status === "PASS";
+        const rowStyle = isOk
+          ? "bg-emerald-950/30 border-emerald-500/30 text-emerald-200"
+          : isPass
+          ? "bg-amber-950/30 border-amber-500/30 text-amber-200"
+          : "bg-rose-950/30 border-rose-500/30 text-rose-200";
+
+        const badgeStyle = isOk
+          ? "bg-emerald-500 text-slate-950"
+          : isPass
+          ? "bg-amber-400 text-slate-950"
+          : "bg-rose-500 text-white";
+
+        const badgeText = isOk
+          ? `${entry.seq}번 정상`
+          : isPass
+          ? `${entry.seq}번 PASS`
+          : "오류(NG)";
+
+        return `
+          <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl border text-xs ${rowStyle}">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="px-1.5 py-0.5 rounded font-black text-[10px] shrink-0 ${badgeStyle}">
+                ${badgeText}
+              </span>
+              <span class="truncate font-medium">${entry.message}</span>
+            </div>
+            <span class="text-[10px] font-mono text-slate-300 shrink-0">${entry.fullTime || entry.time}</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    /**
+     * 11. 카메라 스캐너 제어
+     */
+    async function startScannerCamera() {
+      const fallbackBox = document.getElementById("camera-fallback-box");
+      const statusPill = document.getElementById("camera-status-pill");
+      fallbackBox.classList.add("hidden");
+
+      await stopScannerCamera();
+
+      try {
+        if (typeof Html5Qrcode === "undefined") {
+          throw new Error("QR 스캐너 라이브러리를 불러오지 못했습니다.");
+        }
+
+        html5QrCode = new Html5Qrcode("qr-reader");
+        const config = {
+          fps: 12,
+          qrbox: { width: 200, height: 200 },
+          aspectRatio: 1.333333
+        };
+
+        await html5QrCode.start(
+          { facingMode: state.facingMode },
+          config,
+          (decodedText) => {
+            onQrCodeScanned(decodedText);
+          },
+          () => {}
+        );
+
+        isCameraRunning = true;
+        statusPill.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> 카메라 + 외장스캐너 동시 가동중`;
+      } catch (err) {
+        isCameraRunning = false;
+        console.warn("카메라 시작 안내:", err);
+        fallbackBox.classList.remove("hidden");
+        document.getElementById("camera-fallback-title").textContent = "외장 스캐너(동글) 대기중 · 카메라 권한 필요";
+        document.getElementById("camera-error-msg").textContent =
+          "카메라 없이도 외장 스캐너(동글)로 즉시 스캔이 가능합니다. 카메라를 함께 쓰려면 권한을 허용해주세요.";
+      }
+    }
+
+    async function stopScannerCamera() {
+      if (html5QrCode && isCameraRunning) {
+        try {
+          await html5QrCode.stop();
+          await html5QrCode.clear();
+        } catch (e) {
+          console.warn("카메라 정지 중 예외:", e);
+        }
+      }
+      isCameraRunning = false;
+      html5QrCode = null;
+    }
+
+    async function switchCameraFacing() {
+      state.facingMode = state.facingMode === "environment" ? "user" : "environment";
+      await startScannerCamera();
+    }
+
+    async function handleImageFileScan(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      try {
+        const tempScanner = new Html5Qrcode("qr-reader");
+        const decodedText = await tempScanner.scanFile(file, true);
+        onQrCodeScanned(decodedText);
+      } catch (err) {
+        showInstantFeedbackOverlay("NG", "QR코드 인식 실패", "촬영된 사진에서 QR코드를 찾을 수 없습니다. 다시 선명하게 촬영해주세요.", "");
+        playSoundFeedback("NG");
+      } finally {
+        event.target.value = "";
+      }
+    }
+
+    /**
+     * 12. QR 코드 스캔 판정 및 PASS 처리 (스캔 시간 기록 및 서버 동기화)
+     */
+    function getDeviceRoleLabel() {
+      if (syncRole === "HOST") return "서버폰";
+      if (syncRole === "CLIENT") return "단말기폰";
+      return "단독폰";
+    }
+
+    function onQrCodeScanned(rawQrText) {
+      if (state.screen !== "SCANNER" || !state.currentLine || !state.currentItem) return;
+
+      const cleanedQr = normalizeDongleQrString(rawQrText || "");
+      if (!cleanedQr) return;
+
+      const nowMs = Date.now();
+
+      if (cleanedQr === lastAcceptedQr && (nowMs - lastAcceptedTimestamp) < 2800) {
+        const guideEl = document.getElementById("scanner-guide-caption");
+        guideEl.textContent = "방금 스캔 완료된 파렛트입니다. 다음 순번 파렛트를 스캔하세요.";
+        return;
+      }
+
+      if (isScanCooldown) return;
+
+      const ot = state.currentOrderTime;
+      const lineId = state.currentLine;
+      const itemId = state.currentItem;
+      const rec = ensureRecordSlot(ot, lineId, itemId);
+      const lastSeq = rec.lastScannedSeq;
+
+      if (lastSeq >= MAX_PALLET_SEQ) {
+        playSoundFeedback("NG");
+        showInstantFeedbackOverlay(
+          "DONE",
+          "20번까지 투입 완료됨",
+          "이미 1번~20번 파렛트 진행이 모두 끝났습니다. 처음부터 다시 시작하려면 하단 [스캔완료] 버튼을 눌러주세요.",
+          cleanedQr
+        );
+        return;
+      }
+
+      const expectedSeq = lastSeq + 1;
+      const expectedQr = buildExpectedQrString(lineId, itemId, expectedSeq);
+      const ts = getFormattedTimestamps();
+
+      // 1) 정상 일치하는 경우
+      if (cleanedQr === expectedQr) {
+        rec.lastScannedSeq = expectedSeq;
+        lastAcceptedQr = cleanedQr;
+        lastAcceptedTimestamp = nowMs;
+
+        const isBatchFinished = expectedSeq >= MAX_PALLET_SEQ;
+        const okMsg = isBatchFinished
+          ? `[${ot}] ${lineId}라인 ${itemId} 20번(마지막) 정상 투입 완료!`
+          : `[${ot}] ${lineId}라인 ${itemId} ${expectedSeq}번 정상! (다음: ${expectedSeq + 1}번 대기)`;
+
+        rec.history.push({
+          seq: expectedSeq,
+          qr: cleanedQr,
+          time: ts.timeStr,
+          fullTime: ts.fullTime,
+          timestampMs: nowMs,
+          device: getDeviceRoleLabel(),
+          status: "OK",
+          message: okMsg
+        });
+
+        saveStateToStorage();
+        broadcastStateSync();
+        renderScannerScreenUI();
+        updateLastScanBanner("OK", `${expectedSeq}번 파렛트 정상 투입 (OK)`, okMsg, ts.fullTime);
+
+        if (isBatchFinished) {
+          playSoundFeedback("COMPLETE");
+          showInstantFeedbackOverlay(
+            "COMPLETE",
+            `${expectedSeq}번 스캔 정상 · 전체 완료!`,
+            `1번부터 20번까지 모든 파렛트 투입이 완료되었습니다.\n스캔시간: ${ts.fullTime}`,
+            cleanedQr,
+            1800
+          );
+        } else {
+          playSoundFeedback("OK");
+          showInstantFeedbackOverlay(
+            "OK",
+            `${expectedSeq}번 파렛트 정상 (OK)`,
+            `스캔시간: ${ts.fullTime}\n다음 [${expectedSeq + 1}번 파렛트] 스캔을 준비합니다.`,
+            cleanedQr,
+            1100
+          );
+        }
+        return;
+      }
+
+      // 2) 불일치 (NG)
+      const parsed = parseScannedQrString(cleanedQr);
+      let errorTitle = "불량 · 이종/순번 오류 (NG)";
+      let errorDetail = "";
+
+      if (!parsed.validFormat) {
+        errorTitle = "식별표 QR 규격 불일치 (NG)";
+        errorDetail = `인식된 코드가 파렛트 식별표 규격이 아닙니다. (목표: ${lineId}라인 ${itemId} ${expectedSeq}번)`;
+      } else {
+        const reasons = [];
+        if (parsed.lineId !== lineId) {
+          reasons.push(`라인 불일치(현재 ${lineId}라인 ≠ 스캔 ${parsed.lineId}라인)`);
+        }
+        if (parsed.itemId !== itemId) {
+          reasons.push(`품목 이종 오류(현재 ${itemId} ≠ 스캔 ${parsed.itemId || '미상'})`);
+        }
+        if (parsed.seq !== expectedSeq) {
+          reasons.push(`순번 오류(대기 ${expectedSeq}번 ≠ 스캔 ${parsed.seq}번)`);
+        }
+        errorTitle = reasons.length > 0 ? reasons[0] : "이종/순번 불일치 (NG)";
+        errorDetail = reasons.join(" / ");
+      }
+
+      rec.history.push({
+        seq: expectedSeq,
+        qr: cleanedQr,
+        time: ts.timeStr,
+        fullTime: ts.fullTime,
+        timestampMs: nowMs,
+        device: getDeviceRoleLabel(),
+        status: "NG",
+        message: errorDetail
+      });
+
+      saveStateToStorage();
+      broadcastStateSync();
+      renderScannerScreenUI();
+      playSoundFeedback("NG");
+      updateLastScanBanner("NG", errorTitle, errorDetail, ts.fullTime);
+      showInstantFeedbackOverlay(
+        "NG",
+        errorTitle,
+        `${errorDetail}\n(스캔시간: ${ts.fullTime})`,
+        cleanedQr,
+        2000
+      );
+    }
+
+    /**
+     * 하단 "PASS" 버튼 클릭 시 현재 순번 건너뛰기 처리
+     */
+    function handlePassButtonClick() {
+      getAudioContext();
+
+      if (state.screen !== "SCANNER" || !state.currentLine || !state.currentItem) {
+        alert("스캔 화면(품목 선택 후)에서 PASS 버튼을 사용할 수 있습니다.");
+        return;
+      }
+
+      const ot = state.currentOrderTime;
+      const lineId = state.currentLine;
+      const itemId = state.currentItem;
+      const rec = ensureRecordSlot(ot, lineId, itemId);
+
+      if (rec.lastScannedSeq >= MAX_PALLET_SEQ) {
+        playSoundFeedback("NG");
+        showInstantFeedbackOverlay(
+          "DONE",
+          "이미 20번까지 완료됨",
+          "모든 파렛트 순번이 완료되었습니다. 초기화하려면 [스캔완료] 버튼을 눌러주세요.",
+          ""
+        );
+        return;
+      }
+
+      const targetSeq = rec.lastScannedSeq + 1;
+      const ts = getFormattedTimestamps();
+
+      rec.lastScannedSeq = targetSeq;
+      if (!rec.passedSeqs.includes(targetSeq)) {
+        rec.passedSeqs.push(targetSeq);
+      }
+
+      const isBatchFinished = targetSeq >= MAX_PALLET_SEQ;
+      const passMsg = isBatchFinished
+        ? `[${ot}] ${lineId}라인 ${itemId} 20번(마지막) PASS 완료!`
+        : `[${ot}] ${lineId}라인 ${itemId} ${targetSeq}번 파렛트 PASS 처리 (다음: ${targetSeq + 1}번 대기)`;
+
+      rec.history.push({
+        seq: targetSeq,
+        qr: "PASS(건너뜀)",
+        time: ts.timeStr,
+        fullTime: ts.fullTime,
+        timestampMs: Date.now(),
+        device: getDeviceRoleLabel(),
+        status: "PASS",
+        message: passMsg
+      });
+
+      isScanCooldown = false;
+      lastAcceptedQr = "";
+
+      saveStateToStorage();
+      broadcastStateSync();
+      renderScannerScreenUI();
+      playSoundFeedback("PASS");
+      updateLastScanBanner("PASS", `${targetSeq}번 파렛트 PASS 처리됨`, passMsg, ts.fullTime);
+
+      showInstantFeedbackOverlay(
+        "PASS",
+        `${targetSeq}번 파렛트 PASS 완료`,
+        `처리시간: ${ts.fullTime}\n다음 [${targetSeq + 1}번 파렛트] 스캔을 준비합니다.`,
+        "PASS (수동 건너뛰기)",
+        1000
+      );
+    }
+
+    function showInstantFeedbackOverlay(type, title, detail, scannedQr, durationMs = 1300) {
+      const overlay = document.getElementById("scan-feedback-overlay");
+      isScanCooldown = true;
+
+      if (feedbackTimeoutId) clearTimeout(feedbackTimeoutId);
+
+      let bgClass = "";
+      let badgeHtml = "";
+      if (type === "OK") {
+        bgClass = "bg-emerald-950/95 border-4 border-emerald-400";
+        badgeHtml = `<div class="w-16 h-16 rounded-full bg-emerald-400 text-slate-950 flex items-center justify-center text-3xl font-black mb-2 shadow-lg">✓</div>`;
+      } else if (type === "PASS") {
+        bgClass = "bg-amber-950/95 border-4 border-amber-400";
+        badgeHtml = `<div class="w-16 h-16 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center text-xl font-black mb-2 shadow-lg">PASS</div>`;
+      } else if (type === "COMPLETE") {
+        bgClass = "bg-cyan-950/95 border-4 border-cyan-400";
+        badgeHtml = `<div class="w-16 h-16 rounded-full bg-cyan-400 text-slate-950 flex items-center justify-center text-2xl font-black mb-2 shadow-lg">20/20</div>`;
+      } else {
+        bgClass = "ng-alarm-flash border-4 border-rose-400";
+        badgeHtml = `<div class="w-16 h-16 rounded-full bg-white text-rose-600 flex items-center justify-center text-3xl font-black mb-2 shadow-lg">✕</div>`;
+      }
+
+      overlay.className = `absolute inset-0 z-30 flex flex-col items-center justify-center p-4 text-center backdrop-blur-md transition-all ${bgClass}`;
+      overlay.innerHTML = `
+        ${badgeHtml}
+        <h4 class="text-lg font-black text-white leading-snug">${title}</h4>
+        <p class="text-xs font-semibold text-slate-100 mt-1 whitespace-pre-line">${detail}</p>
+        ${scannedQr ? `<code class="mt-2 px-2 py-0.5 rounded bg-black/50 text-[10px] font-mono text-slate-200 max-w-full truncate">${scannedQr}</code>` : ''}
+      `;
+      overlay.classList.remove("hidden");
+
+      feedbackTimeoutId = setTimeout(() => {
+        overlay.classList.add("hidden");
+        isScanCooldown = false;
+        const guideEl = document.getElementById("scanner-guide-caption");
+        if (state.currentOrderTime && state.currentLine && state.currentItem) {
+          const rec = ensureRecordSlot(state.currentOrderTime, state.currentLine, state.currentItem);
+          if (rec && rec.lastScannedSeq < MAX_PALLET_SEQ) {
+            guideEl.textContent = `다음 [${rec.lastScannedSeq + 1}번 파렛트] QR을 스캔하거나 PASS를 누르세요`;
+          } else {
+            guideEl.textContent = "1~20번 모든 파렛트 진행이 완료되었습니다.";
+          }
+        }
+      }, durationMs);
+    }
+
+    function updateLastScanBanner(status, title, detail, timeStr) {
+      const banner = document.getElementById("last-scan-banner");
+      const icon = document.getElementById("last-scan-icon");
+      const titleEl = document.getElementById("last-scan-title");
+      const detailEl = document.getElementById("last-scan-detail");
+      const timeEl = document.getElementById("last-scan-time");
+
+      if (status === "OK") {
+        banner.className = "rounded-2xl p-3 border bg-emerald-950/40 border-emerald-500/50 flex items-center justify-between gap-2";
+        icon.className = "w-9 h-9 rounded-xl bg-emerald-500 text-slate-950 flex items-center justify-center font-black text-xs shrink-0";
+        icon.textContent = "정상";
+        titleEl.className = "text-sm font-extrabold text-emerald-300 truncate";
+      } else if (status === "PASS") {
+        banner.className = "rounded-2xl p-3 border bg-amber-950/40 border-amber-500/50 flex items-center justify-between gap-2";
+        icon.className = "w-9 h-9 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center font-black text-xs shrink-0";
+        icon.textContent = "PASS";
+        titleEl.className = "text-sm font-extrabold text-amber-300 truncate";
+      } else {
+        banner.className = "rounded-2xl p-3 border bg-rose-950/40 border-rose-500/60 flex items-center justify-between gap-2";
+        icon.className = "w-9 h-9 rounded-xl bg-rose-500 text-white flex items-center justify-center font-black text-xs shrink-0";
+        icon.textContent = "오류";
+        titleEl.className = "text-sm font-extrabold text-rose-300 truncate";
+      }
+
+      titleEl.textContent = title;
+      detailEl.textContent = detail;
+      timeEl.textContent = timeStr;
+    }
+
+    /**
+     * 13. 하단 "스캔완료" 버튼 처리 (초기화 및 서버 동기화)
+     */
+    function handleScanCompleteButtonClick() {
+      const modal = document.getElementById("confirm-modal");
+      const titleEl = document.getElementById("confirm-modal-title");
+      const descEl = document.getElementById("confirm-modal-desc");
+      const okBtn = document.getElementById("confirm-modal-ok-btn");
+
+      const ot = state.currentOrderTime;
+
+      if (state.screen === "SCANNER" && state.currentLine && state.currentItem) {
+        titleEl.textContent = `[${ot}] ${state.currentLine}라인 ${state.currentItem} 스캔완료`;
+        descEl.textContent = `현재 품목(${state.currentItem})의 스캔/PASS 진행을 완료하고, 다시 1번 파렛트부터 시작하도록 초기화하시겠습니까?`;
+        okBtn.onclick = () => {
+          resetItemProgress(ot, state.currentLine, state.currentItem, true);
+          closeConfirmModal();
+        };
+      } else if (state.screen === "ITEMS" && state.currentLine) {
+        titleEl.textContent = `[${ot}] ${state.currentLine}라인 전체 초기화`;
+        descEl.textContent = `${state.currentLine}라인의 6개 품목 이력을 모두 초기화하고 1번 파렛트부터 다시 시작하시겠습니까?`;
+        okBtn.onclick = () => {
+          ITEMS.forEach(item => resetItemProgress(ot, state.currentLine, item.id, false));
+          saveStateToStorage();
+          broadcastStateSync();
+          renderItemButtons(state.currentLine);
+          closeConfirmModal();
+        };
+      } else if (state.screen === "LINES" && ot) {
+        titleEl.textContent = `[${ot} 오더] 전체 라인 초기화`;
+        descEl.textContent = `선택된 [${ot}] 오더의 모든 라인(11, 12, 22, 23라인) 스캔 이력을 초기화하시겠습니까?`;
+        okBtn.onclick = () => {
+          LINES.forEach(line => {
+            ITEMS.forEach(item => resetItemProgress(ot, line.id, item.id, false));
+          });
+          saveStateToStorage();
+          broadcastStateSync();
+          renderLineScreen();
+          closeConfirmModal();
+        };
+      } else {
+        titleEl.textContent = "8개 오더시간 전체 초기화";
+        descEl.textContent = "모든 오더발행 시간(00:10 ~ 22:10)과 라인의 스캔 이력을 초기화하고 처음부터 시작하시겠습니까?";
+        okBtn.onclick = () => {
+          ORDER_TIMES.forEach(orderObj => {
+            LINES.forEach(line => {
+              ITEMS.forEach(item => resetItemProgress(orderObj.id, line.id, item.id, false));
+            });
+          });
+          saveStateToStorage();
+          broadcastStateSync();
+          renderHomeScreen();
+          closeConfirmModal();
+        };
+      }
+
+      modal.classList.remove("hidden");
+    }
+
+    function resetItemProgress(orderTime, lineId, itemId, triggerRender = true) {
+      const key = getRecordKey(orderTime, lineId, itemId);
+      state.records[key] = {
+        lastScannedSeq: 0,
+        passedSeqs: [],
+        history: []
+      };
+      lastAcceptedQr = "";
+      isScanCooldown = false;
+
+      if (triggerRender) {
+        saveStateToStorage();
+        broadcastStateSync();
+        if (state.screen === "SCANNER") {
+          renderScannerScreenUI();
+          const banner = document.getElementById("last-scan-banner");
+          banner.className = "rounded-2xl p-3 border bg-slate-900 border-slate-800 flex items-center justify-between gap-2";
+          document.getElementById("last-scan-icon").className = "w-9 h-9 rounded-xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center font-black text-xs shrink-0";
+          document.getElementById("last-scan-icon").textContent = "초기화";
+          document.getElementById("last-scan-title").className = "text-sm font-extrabold text-cyan-300 truncate";
+          document.getElementById("last-scan-title").textContent = "스캔완료 처리됨 · 1번부터 스캔 준비";
+          document.getElementById("last-scan-detail").textContent = `${lineId}라인 ${itemId} 1번 파렛트를 스캔해주세요.`;
+          playSoundFeedback("OK");
+        }
+      }
+    }
+
+    function closeConfirmModal() {
+      document.getElementById("confirm-modal").classList.add("hidden");
+    }
+
+    /**
+     * 14. 부가 UI 기능 (규격 안내 토글 및 식별표 QR 생성기 모달)
+     */
+    function toggleSpecTable() {
+      const wrapper = document.getElementById("spec-table-wrapper");
+      const label = document.getElementById("spec-toggle-label");
+      const isHidden = wrapper.classList.contains("hidden");
+      if (isHidden) {
+        wrapper.classList.remove("hidden");
+        label.textContent = "접기 ▲";
+      } else {
+        wrapper.classList.add("hidden");
+        label.textContent = "펼치기 ▼";
+      }
+    }
+
+    function populateQrGeneratorSeqOptions() {
+      const selectEl = document.getElementById("gen-seq");
+      let html = "";
+      for (let i = 1; i <= MAX_PALLET_SEQ; i++) {
+        html += `<option value="${i}">${i}번 파렛트</option>`;
+      }
+      selectEl.innerHTML = html;
+    }
+
+    function openQrGeneratorModal() {
+      if (state.currentLine) {
+        document.getElementById("gen-line").value = state.currentLine;
+      }
+      if (state.currentItem) {
+        document.getElementById("gen-item").value = state.currentItem;
+      }
+      if (state.currentOrderTime && state.currentLine && state.currentItem) {
+        const rec = ensureRecordSlot(state.currentOrderTime, state.currentLine, state.currentItem);
+        const nextSeq = Math.min((rec ? rec.lastScannedSeq : 0) + 1, MAX_PALLET_SEQ);
+        document.getElementById("gen-seq").value = String(nextSeq);
+      }
+
+      document.getElementById("qr-generator-modal").classList.remove("hidden");
+      updateGeneratedQr();
+    }
+
+    function closeQrGeneratorModal() {
+      document.getElementById("qr-generator-modal").classList.add("hidden");
+    }
+
+    function stepGeneratedSeq(delta) {
+      const selectEl = document.getElementById("gen-seq");
+      let current = parseInt(selectEl.value, 10) || 1;
+      current += delta;
+      if (current < 1) current = MAX_PALLET_SEQ;
+      if (current > MAX_PALLET_SEQ) current = 1;
+      selectEl.value = String(current);
+      updateGeneratedQr();
+    }
+
+    function updateGeneratedQr() {
+      const lineId = document.getElementById("gen-line").value;
+      const itemId = document.getElementById("gen-item").value;
+      const seqNum = parseInt(document.getElementById("gen-seq").value, 10) || 1;
+
+      const qrText = buildExpectedQrString(lineId, itemId, seqNum);
+      document.getElementById("gen-card-title").textContent = `${lineId}라인 · ${itemId} · ${seqNum}번 파렛트`;
+      document.getElementById("gen-qr-string").textContent = qrText;
+
+      const holder = document.getElementById("qrcode-canvas-holder");
+      holder.innerHTML = "";
+      if (typeof QRCode !== "undefined") {
+        new QRCode(holder, {
+          text: qrText,
+          width: 170,
+          height: 170,
+          colorDark: "#0f172a",
+          colorLight: "#ffffff",
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      }
+    }
+
+    window.onload = function () {
+      initApp();
+    };
+  </script>
+</body>
+</html>
